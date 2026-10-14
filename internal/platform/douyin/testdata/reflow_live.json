@@ -1,0 +1,102 @@
+{
+ "data": {
+  "room": {
+   "id_str": "7696161576210664219",
+   "status": 2,
+   "title": "沉醉旧时光，唱响粤语经典",
+   "owner": {
+    "nickname": "欣怡🎤港澳经典",
+    "web_rid": "898334614374"
+   },
+   "stream_url": {
+    "flv_pull_url": {
+     "FULL_HD1": "http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_uhd.flv?k=95f3ed020f144a3e&t=1792508904&major_anchor_level=common&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&unique_id=stream-120252524672319527_39_flv_uhd&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq",
+     "HD1": "http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_hd.flv?k=ced590f21ef9b7f2&t=1792508904&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&major_anchor_level=common&arch_hrchy=w1&unique_id=stream-120252524672319527_39_flv_hd&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq",
+     "SD1": "http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_ld.flv?k=234b72c96160d0bf&t=1792508904&major_anchor_level=common&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&unique_id=stream-120252524672319527_39_flv_ld&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq",
+     "SD2": "http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_sd.flv?k=bcd1b5f420630b53&t=1792508904&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&major_anchor_level=common&unique_id=stream-120252524672319527_39_flv_sd&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq"
+    },
+    "hls_pull_url_map": {
+     "FULL_HD1": "http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_uhd/index.m3u8?k=53173e022be6cf52&t=1792508904&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&major_anchor_level=common&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq",
+     "HD1": "http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_hd/index.m3u8?k=6c40f136153d258c&t=1792508904&major_anchor_level=common&arch_hrchy=w1&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq",
+     "SD1": "http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_ld/index.m3u8?k=7237e8508aea92a9&t=1792508904&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&major_anchor_level=common&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq",
+     "SD2": "http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_sd/index.m3u8?k=1f7128a4ce3b6e4a&t=1792508904&arch_hrchy=w1&major_anchor_level=common&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq"
+    },
+    "live_core_sdk_data": {
+     "pull_data": {
+      "stream_data": "{\"common\":{\"ts\":\"1791904104\",\"session_id\":\"037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"stream\":\"120252524672319527\",\"version\":0,\"rule_ids\":\"{\\\"ab_version_trace\\\":null,\\\"sched\\\":\\\"{\\\\\\\"result\\\\\\\":{\\\\\\\"cdn\\\\\\\":47,\\\\\\\"hit\\\\\\\":\\\\\\\"default\\\\\\\"}}\\\"}\",\"common_trace\":\"{\\\"StrategyTrace\\\":{\\\"Neptune\\\":{\\\"PlayStream\\\":{\\\"ids\\\":null}}},\\\"VpaasFunctionIDS\\\":\\\"\\\",\\\"VpaasABOptionIDS\\\":\\\"\\\",\\\"BusinessType\\\":\\\"default_business\\\",\\\"BigeventAnchorLevel\\\":\\\"\\\",\\\"BizType\\\":\\\"show_room\\\"}\",\"app_id\":\"100102\",\"major_anchor_level\":\"common\",\"mode\":\"Normal\",\"lines\":{\"main\":\"line_47\"},\"p2p_params\":{\"PcdnIsolationConfig\":{\"StunV4Domain\":\"vc-mirror.ndcpp.com\",\"StunV6Domain\":\"vc-mirror-v6.ndcpp.com\",\"HoleV6Domain\":\"signal-t3-v6-az1.rtcxyz.com\",\"IsolationName\":\"isolation1\",\"FsV4Domain\":\"signal-t1-v4-az1.rtcxyz.com\",\"FsV6Domain\":\"signal-t1-v6-az1.rtcxyz.com\",\"FsHttpsDomain\":\"vcl-brain-http.ndcpp.com\",\"HoleV4Domain\":\"signal-t3-v4-az1.rtcxyz.com\"}},\"label\":{\"peer_labels\":{},\"labels\":{}},\"stream_data_content_encoding\":\"default\",\"common_sdk_params\":{\"main\":\"{}\"},\"stream_name\":\"stream-120252524672319527\",\"main_push_id\":39,\"backup_push_id\":0},\"data\":{\"ld\":{\"main\":{\"flv\":\"http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_ld.flv?k=234b72c96160d0bf&t=1792508904&major_anchor_level=common&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&unique_id=stream-120252524672319527_39_flv_ld&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"hls\":\"http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_ld/index.m3u8?k=7237e8508aea92a9&t=1792508904&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&major_anchor_level=common&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"http://pull-lls-l6.douyincdn.com/third/stream-120252524672319527_ld.sdp?k=424fa19f490408a2&t=1792508904&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&major_anchor_level=common&unique_id=stream-120252524672319527_39_lls_ld&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"tsl\":\"\",\"tile\":\"\",\"http_ts\":\"\",\"ll_hls\":\"\",\"sdk_params\":\"{\\\"BufferDataMs\\\":1000,\\\"EnableLowLatencyFLV\\\":1,\\\"LiveIOConfig\\\":{\\\"LiveIOExperimentParam\\\":{\\\"p2p_setting_use_https_domain\\\":1,\\\"enable_aggr_p2p_stream_id\\\":1}},\\\"FastOpenDuration\\\":-1800,\\\"PlayingIntervalMs\\\":20000,\\\"NetworkAdapt\\\":{\\\"HurryMillisecond\\\":3500,\\\"HurryStartMs\\\":4000,\\\"HurryStopType\\\":1,\\\"HurryTime\\\":3500,\\\"Enabled\\\":0,\\\"HurryType\\\":0,\\\"SlowMillisecond\\\":1500,\\\"SlowSpeed\\\":0.9,\\\"SlowTime\\\":1500,\\\"HurrySpeed\\\":1.1},\\\"P2PFastOpenDuration\\\":-1500,\\\"VCodec\\\":\\\"h264\\\",\\\"vbitrate\\\":1000000,\\\"resolution\\\":\\\"540x960\\\",\\\"gop\\\":2,\\\"drType\\\":\\\"sdr\\\",\\\"fps\\\":25}\",\"enableEncryption\":false}},\"sd\":{\"main\":{\"flv\":\"http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_sd.flv?k=bcd1b5f420630b53&t=1792508904&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&major_anchor_level=common&unique_id=stream-120252524672319527_39_flv_sd&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"hls\":\"http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_sd/index.m3u8?k=1f7128a4ce3b6e4a&t=1792508904&arch_hrchy=w1&major_anchor_level=common&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"http://pull-lls-l6.douyincdn.com/third/stream-120252524672319527_sd.sdp?k=cd4d3c1d7c2df087&t=1792508904&arch_hrchy=w1&major_anchor_level=common&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&unique_id=stream-120252524672319527_39_lls_sd&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"tsl\":\"\",\"tile\":\"\",\"http_ts\":\"\",\"ll_hls\":\"\",\"sdk_params\":\"{\\\"PlayingIntervalMs\\\":20000,\\\"P2PFastOpenDuration\\\":-1500,\\\"EnableLowLatencyFLV\\\":1,\\\"LiveIOConfig\\\":{\\\"LiveIOExperimentParam\\\":{\\\"enable_aggr_p2p_stream_id\\\":1,\\\"p2p_setting_use_https_domain\\\":1}},\\\"NetworkAdapt\\\":{\\\"HurryType\\\":0,\\\"SlowMillisecond\\\":1500,\\\"SlowSpeed\\\":0.9,\\\"SlowTime\\\":1500,\\\"HurrySpeed\\\":1.1,\\\"HurryMillisecond\\\":3500,\\\"HurryStartMs\\\":4000,\\\"HurryStopType\\\":1,\\\"HurryTime\\\":3500,\\\"Enabled\\\":0},\\\"FastOpenDuration\\\":-1800,\\\"BufferDataMs\\\":1000,\\\"VCodec\\\":\\\"h264\\\",\\\"vbitrate\\\":2000000,\\\"resolution\\\":\\\"720x1280\\\",\\\"gop\\\":2,\\\"drType\\\":\\\"sdr\\\",\\\"fps\\\":30}\",\"enableEncryption\":false}},\"ao\":{\"main\":{\"flv\":\"http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527.flv?k=c2692261187fee33&t=1792508904&arch_hrchy=w1&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&only_audio=1&eupf_relay_mode=err&major_anchor_level=common&unique_id=stream-120252524672319527_39_flv&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"hls\":\"\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"http_ts\":\"\",\"ll_hls\":\"\",\"sdk_params\":\"{\\\"LiveIOConfig\\\":{\\\"LiveIOExperimentParam\\\":{\\\"enable_aggr_p2p_stream_id\\\":1,\\\"p2p_setting_use_https_domain\\\":1}},\\\"NetworkAdapt\\\":{\\\"SlowSpeed\\\":0.9,\\\"SlowTime\\\":1500,\\\"HurrySpeed\\\":1.1,\\\"HurryType\\\":0,\\\"SlowMillisecond\\\":1500,\\\"HurryStopType\\\":1,\\\"HurryTime\\\":3500,\\\"Enabled\\\":0,\\\"HurryMillisecond\\\":3500,\\\"HurryStartMs\\\":4000},\\\"FastOpenDuration\\\":-1800,\\\"PlayingIntervalMs\\\":20000,\\\"P2PFastOpenDuration\\\":-1500,\\\"EnableLowLatencyFLV\\\":1,\\\"VCodec\\\":\\\"h264\\\",\\\"BufferDataMs\\\":1000,\\\"vbitrate\\\":0,\\\"resolution\\\":\\\"\\\",\\\"gop\\\":2,\\\"drType\\\":\\\"sdr\\\",\\\"fps\\\":0}\",\"enableEncryption\":false}},\"hd\":{\"main\":{\"flv\":\"http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_hd.flv?k=ced590f21ef9b7f2&t=1792508904&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&major_anchor_level=common&arch_hrchy=w1&unique_id=stream-120252524672319527_39_flv_hd&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"hls\":\"http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_hd/index.m3u8?k=6c40f136153d258c&t=1792508904&major_anchor_level=common&arch_hrchy=w1&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"http://pull-lls-l6.douyincdn.com/third/stream-120252524672319527_hd.sdp?k=0f6ca36ad79269c8&t=1792508904&arch_hrchy=w1&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&major_anchor_level=common&unique_id=stream-120252524672319527_39_lls_hd&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"tsl\":\"\",\"tile\":\"\",\"http_ts\":\"\",\"ll_hls\":\"\",\"sdk_params\":\"{\\\"VCodec\\\":\\\"h264\\\",\\\"FastOpenDuration\\\":-1800,\\\"PlayingIntervalMs\\\":20000,\\\"EnableLowLatencyFLV\\\":1,\\\"LiveIOConfig\\\":{\\\"LiveIOExperimentParam\\\":{\\\"enable_aggr_p2p_stream_id\\\":1,\\\"p2p_setting_use_https_domain\\\":1}},\\\"BufferDataMs\\\":1000,\\\"P2PFastOpenDuration\\\":-1500,\\\"NetworkAdapt\\\":{\\\"HurryMillisecond\\\":3500,\\\"HurryStartMs\\\":4000,\\\"HurryStopType\\\":1,\\\"HurryTime\\\":3500,\\\"Enabled\\\":0,\\\"HurryType\\\":0,\\\"SlowMillisecond\\\":1500,\\\"SlowSpeed\\\":0.9,\\\"SlowTime\\\":1500,\\\"HurrySpeed\\\":1.1},\\\"vbitrate\\\":4000000,\\\"resolution\\\":\\\"720x1280\\\",\\\"gop\\\":2,\\\"drType\\\":\\\"sdr\\\",\\\"fps\\\":30}\",\"enableEncryption\":false}},\"md\":{\"main\":{\"flv\":\"https://pull-flv-l6-admin.douyincdn.com/third/stream-120252524672319527_md.flv?k=398191a4984bc237&t=1792508904&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&major_anchor_level=common&unique_id=stream-120252524672319527_39_flv_md&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"hls\":\"http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_md/index.m3u8?k=36b613822891088c&t=1792508904&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&major_anchor_level=common&exp_hrchy=w1&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"http://pull-lls-l6.douyincdn.com/third/stream-120252524672319527_md.sdp?k=8c12e57b50470224&t=1792508904&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&major_anchor_level=common&unique_id=stream-120252524672319527_39_lls_md&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"tsl\":\"\",\"tile\":\"\",\"http_ts\":\"\",\"ll_hls\":\"\",\"sdk_params\":\"{\\\"EnableLowLatencyFLV\\\":1,\\\"NetworkAdapt\\\":{\\\"SlowSpeed\\\":0.9,\\\"SlowTime\\\":1500,\\\"HurrySpeed\\\":1.1,\\\"HurryType\\\":0,\\\"SlowMillisecond\\\":1500,\\\"HurryStopType\\\":1,\\\"HurryTime\\\":3500,\\\"Enabled\\\":0,\\\"HurryMillisecond\\\":3500,\\\"HurryStartMs\\\":4000},\\\"VCodec\\\":\\\"h264\\\",\\\"P2PFastOpenDuration\\\":-1500,\\\"LiveIOConfig\\\":{\\\"LiveIOExperimentParam\\\":{\\\"enable_aggr_p2p_stream_id\\\":1,\\\"p2p_setting_use_https_domain\\\":1}},\\\"FastOpenDuration\\\":-1800,\\\"PlayingIntervalMs\\\":20000,\\\"BufferDataMs\\\":1000,\\\"vbitrate\\\":800000,\\\"resolution\\\":\\\"360x640\\\",\\\"gop\\\":2,\\\"drType\\\":\\\"sdr\\\",\\\"fps\\\":15}\",\"enableEncryption\":false}},\"origin\":{\"main\":{\"flv\":\"http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_or4.flv?k=6d0f77dc94a70307&t=1792508904&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&major_anchor_level=common&unique_id=stream-120252524672319527_39_flv_or4&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"hls\":\"http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_or4/index.m3u8?k=9a2eafb59ee5b66a&t=1792508904&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&major_anchor_level=common&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"http://pull-lls-l6.douyincdn.com/third/stream-120252524672319527_or4.sdp?k=90f5fdd0eacbcb0d&t=1792508904&major_anchor_level=common&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&unique_id=stream-120252524672319527_39_lls_or4&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"tsl\":\"\",\"tile\":\"\",\"http_ts\":\"\",\"ll_hls\":\"\",\"sdk_params\":\"{\\\"P2PFastOpenDuration\\\":-1500,\\\"LiveIOConfig\\\":{\\\"LiveIOExperimentParam\\\":{\\\"p2p_setting_use_https_domain\\\":1,\\\"enable_aggr_p2p_stream_id\\\":1}},\\\"FastOpenDuration\\\":-1800,\\\"PlayingIntervalMs\\\":20000,\\\"EnableLowLatencyFLV\\\":1,\\\"VCodec\\\":\\\"h264\\\",\\\"BufferDataMs\\\":1000,\\\"NetworkAdapt\\\":{\\\"Enabled\\\":0,\\\"HurryMillisecond\\\":3500,\\\"HurryStartMs\\\":4000,\\\"HurryStopType\\\":1,\\\"HurryTime\\\":3500,\\\"HurrySpeed\\\":1.1,\\\"HurryType\\\":0,\\\"SlowMillisecond\\\":1500,\\\"SlowSpeed\\\":0.9,\\\"SlowTime\\\":1500},\\\"vbitrate\\\":8674000,\\\"resolution\\\":\\\"1080x1920\\\",\\\"gop\\\":2,\\\"drType\\\":\\\"sdr\\\",\\\"fps\\\":30}\",\"enableEncryption\":false}},\"uhd\":{\"main\":{\"flv\":\"http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_uhd.flv?k=95f3ed020f144a3e&t=1792508904&major_anchor_level=common&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&unique_id=stream-120252524672319527_39_flv_uhd&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"hls\":\"http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_uhd/index.m3u8?k=53173e022be6cf52&t=1792508904&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&major_anchor_level=common&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"http://pull-lls-l6.douyincdn.com/third/stream-120252524672319527_uhd.sdp?k=c14bfbe65e461ce4&t=1792508904&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&major_anchor_level=common&unique_id=stream-120252524672319527_39_lls_uhd&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq\",\"tsl\":\"\",\"tile\":\"\",\"http_ts\":\"\",\"ll_hls\":\"\",\"sdk_params\":\"{\\\"EnableLowLatencyFLV\\\":1,\\\"LiveIOConfig\\\":{\\\"LiveIOExperimentParam\\\":{\\\"enable_aggr_p2p_stream_id\\\":1,\\\"p2p_setting_use_https_domain\\\":1}},\\\"FastOpenDuration\\\":-1800,\\\"NetworkAdapt\\\":{\\\"Enabled\\\":0,\\\"HurryMillisecond\\\":3500,\\\"HurryStartMs\\\":4000,\\\"HurryStopType\\\":1,\\\"HurryTime\\\":3500,\\\"HurrySpeed\\\":1.1,\\\"HurryType\\\":0,\\\"SlowMillisecond\\\":1500,\\\"SlowSpeed\\\":0.9,\\\"SlowTime\\\":1500},\\\"PlayingIntervalMs\\\":20000,\\\"P2PFastOpenDuration\\\":-1500,\\\"VCodec\\\":\\\"h264\\\",\\\"BufferDataMs\\\":1000,\\\"vbitrate\\\":6000000,\\\"resolution\\\":\\\"1080x1920\\\",\\\"gop\\\":2,\\\"drType\\\":\\\"sdr\\\",\\\"fps\\\":30}\",\"enableEncryption\":false}}}}",
+      "options": {
+       "default_quality": {
+        "name": "超清",
+        "sdk_key": "hd",
+        "v_codec": "",
+        "resolution": "",
+        "level": 0,
+        "v_bit_rate": 0,
+        "additional_content": "",
+        "fps": 0,
+        "disable": 0
+       },
+       "qualities": [
+        {
+         "name": "标清",
+         "sdk_key": "ld",
+         "v_codec": "264",
+         "resolution": "540x960",
+         "level": 1,
+         "v_bit_rate": 1000000,
+         "additional_content": "",
+         "fps": 25,
+         "disable": 0
+        },
+        {
+         "name": "高清",
+         "sdk_key": "sd",
+         "v_codec": "264",
+         "resolution": "720x1280",
+         "level": 2,
+         "v_bit_rate": 2000000,
+         "additional_content": "",
+         "fps": 30,
+         "disable": 0
+        },
+        {
+         "name": "超清",
+         "sdk_key": "hd",
+         "v_codec": "264",
+         "resolution": "720x1280",
+         "level": 3,
+         "v_bit_rate": 4000000,
+         "additional_content": "",
+         "fps": 30,
+         "disable": 0
+        },
+        {
+         "name": "蓝光",
+         "sdk_key": "uhd",
+         "v_codec": "264",
+         "resolution": "1080x1920",
+         "level": 4,
+         "v_bit_rate": 8674000,
+         "additional_content": "",
+         "fps": 30,
+         "disable": 0
+        }
+       ],
+       "vpass_default": false,
+       "quality_strategy": ""
+      },
+      "version": 0,
+      "hls_data_unencrypted": {},
+      "kind": 0,
+      "Hls": [],
+      "Flv": [],
+      "codec": "",
+      "compensatory_data": ""
+     },
+     "size": ""
+    }
+   }
+  }
+ },
+ "status_code": 0
+}

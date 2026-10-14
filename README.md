@@ -1,0 +1,103 @@
+# StreamCap (Go)
+
+抖音、B 站直播录制工具，带网页界面。后端用 Go 重写，自带界面，编译出来就是一个可执行文件。录制核心依赖 ffmpeg。
+
+平台解析移植自 [streamget](https://github.com/ihmily/streamget)（MIT 许可），界面沿用 StreamCap 的 web UI。
+
+## 运行
+
+需要 ffmpeg 和 ffprobe：
+
+- **Windows**：把 `ffmpeg.exe`、`ffprobe.exe` 放在 `StreamCap.exe` 同目录下（也可以放在同目录的 `ffmpeg\` 或 `ffmpeg\bin\` 子目录），或者执行 `winget install Gyan.FFmpeg` 安装。
+- **macOS**：执行 `brew install ffmpeg`。
+
+双击 `StreamCap.exe`（Windows）或 `StreamCap.app`（macOS）后，会打开一个独立的软件窗口，不经过浏览器：
+
+| 操作 | 效果 |
+|---|---|
+| 关闭窗口 | 只隐藏窗口，**后台继续录制**。Windows 托盘 / macOS 菜单栏会留一个图标 |
+| 点托盘或菜单栏图标，或再次双击程序 | 重新打开窗口（同一时间只会运行一个实例） |
+| 托盘「退出」、界面左下角的退出按钮、macOS 上按 Cmd+Q | 停止所有录制，保存并合并文件后退出 |
+
+界面也可以用浏览器访问：`http://127.0.0.1:6008`，托盘菜单里有「在浏览器中打开」。
+
+### 数据保存位置
+
+| | 设置、直播间列表 | 录像 | 日志 |
+|---|---|---|---|
+| Windows | 程序目录下的 `data\`（程序目录不可写时改到 `%LOCALAPPDATA%\StreamCap`） | `downloads\` | `logs\` |
+| macOS（.app） | `~/Library/Application Support/StreamCap` | `~/Movies/StreamCap` | `~/Library/Logs/StreamCap` |
+
+录像位置可以在设置里修改。排查断流问题时看 `streamcap.log`。
+
+### 启动参数
+
+```bash
+StreamCap -browser    # 不开窗口，改用浏览器打开（开发界面时用）
+StreamCap -devtools   # 在窗口里右键 →「检查」，打开开发者工具
+StreamCap -headless   # 不开任何界面（服务器上用），Ctrl+C 退出
+StreamCap -port 7000  # 换端口
+```
+
+> 界面没有登录保护。默认只监听 127.0.0.1，不要用 `-host 0.0.0.0` 暴露到不可信的网络。
+
+### 退出与异常保护
+
+- **任何方式退出都会先收尾**：Ctrl+C、关掉终端窗口、`kill`、托盘「退出」都会先让 ffmpeg 正常写完文件，再合并、转换后退出。
+- **不会留下孤儿 ffmpeg**：
+  - Windows 用作业对象（Job Object）把 ffmpeg 绑定在主程序上，主程序不管怎么结束，ffmpeg 都会一起结束。
+  - macOS 和 Linux 会记录 ffmpeg 的进程号和启动时间。主程序被强制杀掉后，下次启动时会找到残留的 ffmpeg，让它正常收尾。
+- **断电、崩溃后自动补整理**：每场直播都会记录到 `sessions.json`。上次没来得及合并、转换的录像，下次启动时会自动补做。
+
+## 稳定性设计
+
+针对的问题：直播并没有断，录制却断了，界面还显示"未开播"。
+
+- **检测失败不等于未开播**：网络错误、平台风控等情况一律当作"状态未知"，不会把正在直播的房间标成"未开播"。
+- **断流立即重连**：CDN 断开、ffmpeg 出错、45 秒没有写入任何数据，都会立刻重新获取一个新的拉流地址继续录。如果连续几次都很快失败，等待间隔会逐步加长。重连期间界面显示"重连中"。
+- **确认下播再结束**：要连续 3 次检测到未开播，才认定这场直播结束。平台状态常常比 CDN 慢，只检测一次容易误判。
+- **地址过期前无缝切换**：拉流地址带过期时间（比如 B 站约 1 小时）时，会在过期前 60 秒先用新地址开始录，再停掉旧的，中间没有空档。
+- **一场直播一个文件**：同一场直播因重连产生的多段，下播后无损拼接成一个文件，再转成 MP4（只换封装，不重新编码）。
+- **优雅停止**：停止录制时先给 ffmpeg 发 `q` 让它正常收尾，录出来的文件不会损坏。
+
+## 已知限制
+
+- **B 站画质**：不登录时，多数直播间最高只能录到 720p。在 设置 → 平台 Cookie 里填入带 `SESSDATA` 的登录 Cookie 可能解锁原画，这一点还没有用登录 Cookie 实际验证过。
+- **抖音短链接**：`v.douyin.com/…` 的解析逻辑已经实现，但还没有用真实短链接测过。
+- **抖音匿名 Cookie**：匿名访问依赖内置的 `ttwid`。如果抖音不再接受它，会表现为检测一直失败，这时在设置里填自己的 Cookie。
+
+## 开发
+
+开发界面时用浏览器调试（支持热更新），最终打包成独立窗口：
+
+```bash
+cd web && npm install && npm run build && cd ..   # 构建界面（会嵌入二进制）
+go run ./cmd/streamcap -browser                    # 后端运行在 :6008，用浏览器打开
+cd web && npm run dev                              # 界面热更新在 :5178，接口代理到 :6008
+go run ./cmd/streamcap -devtools                   # 用独立窗口调试，右键可「检查」
+go test ./...                                      # 加 STREAMCAP_LIVE_TEST=1 会跑连真实直播间的测试
+scripts/build.sh                                   # 打包，产物在 dist/
+```
+
+`scripts/build.sh` 需要在 macOS 上运行（macOS 版依赖系统 SDK），产物有两个：
+
+- `dist/StreamCap-windows-amd64.zip`：`StreamCap.exe`，不弹命令行窗口，带图标。
+- `dist/StreamCap-macos.zip`：`StreamCap.app`，同时支持 Intel 和 Apple 芯片，已做 ad-hoc 签名。
+
+图标改了以后需要重新生成：`(cd tools/genres && go run . -root ../..)`。会生成 exe 资源、`.ico`、菜单栏图标和 macOS 图标集。
+
+代码结构：
+
+```
+cmd/streamcap         入口：启动参数、单实例、日志、HTTP 服务、统一的退出流程
+internal/platform     平台解析接口；douyin/、bilibili/ 是各平台实现
+internal/monitor      每个直播间一个 goroutine：检测、录制、重连、结束一场直播
+internal/recorder     ffmpeg 进程管理、无数据看门狗、合并与转 MP4
+internal/media        ffprobe 读分辨率、生成封面（只读本地文件，不碰直播流地址）
+internal/notify       开播/下播推送（钉钉、飞书、Bark、ntfy、Server酱、Telegram、邮件等）
+internal/store        JSON 存储：原子写入，合并写盘
+internal/api          HTTP 接口 + WebSocket 实时推送
+internal/desktop      独立窗口（WebView2 / WKWebView）+ 托盘 / 菜单栏图标
+tools/genres          生成图标和 Windows 资源（单独的 go module）
+web/                  React 界面（Vite）
+```

@@ -1,0 +1,82 @@
+{
+ "enter_live.json|True|OD": {
+  "flv": "http://pull-flv-q95.douyincdn.com/third/stream-408479850811097917_or4.flv?expire=1792508841&sign=777b7e7b1879279ab86ff87b13626bb5&arch_hrchy=h1&exp_hrchy=h1&major_anchor_level=common&unique_id=stream-408479850811097917_829_flv_or4&t_id=037-202610132307214585B0D51DD6324D1187-vFG343&codec=h264",
+  "hls": "http://pull-hls-q95.douyincdn.com/third/stream-408479850811097917_or4.m3u8?expire=1792508841&sign=b779a6396d7e9575845cbc81ae038716&exp_hrchy=h1&major_anchor_level=common&arch_hrchy=h1&t_id=037-202610132307214585B0D51DD6324D1187-vFG343&codec=h264"
+ },
+ "enter_live.json|True|UHD": {
+  "flv": "http://pull-flv-q95.douyincdn.com/third/stream-408479850811097917_uhd.flv?expire=1792508841&sign=a61e294c9065f90804d28fd016c0e96c&arch_hrchy=h1&exp_hrchy=h1&major_anchor_level=common&unique_id=stream-408479850811097917_829_flv_uhd&t_id=037-202610132307214585B0D51DD6324D1187-vFG343",
+  "hls": "http://pull-hls-q95.douyincdn.com/third/stream-408479850811097917_uhd.m3u8?expire=1792508841&sign=32af7ea5df8a5a128a394028cce15bba&arch_hrchy=h1&exp_hrchy=h1&major_anchor_level=common&t_id=037-202610132307214585B0D51DD6324D1187-vFG343"
+ },
+ "enter_live.json|True|HD": {
+  "flv": "http://pull-flv-q95.douyincdn.com/third/stream-408479850811097917_hd.flv?expire=1792508841&sign=8cae54faa87e8d2194a56b1ae53a62e0&arch_hrchy=h1&exp_hrchy=h1&major_anchor_level=common&unique_id=stream-408479850811097917_829_flv_hd&t_id=037-202610132307214585B0D51DD6324D1187-vFG343",
+  "hls": "http://pull-hls-q95.douyincdn.com/third/stream-408479850811097917_hd.m3u8?expire=1792508841&sign=383eb36922f9f45eb0499e8cfe2baefe&exp_hrchy=h1&major_anchor_level=common&arch_hrchy=h1&t_id=037-202610132307214585B0D51DD6324D1187-vFG343"
+ },
+ "enter_live.json|True|SD": {
+  "flv": "http://pull-flv-q95.douyincdn.com/third/stream-408479850811097917_ld.flv?expire=1792508841&sign=c99d671b30c39e0c276fe323ab7defc8&arch_hrchy=h1&major_anchor_level=common&exp_hrchy=h1&unique_id=stream-408479850811097917_829_flv_ld&t_id=037-202610132307214585B0D51DD6324D1187-vFG343",
+  "hls": "http://pull-hls-q95.douyincdn.com/third/stream-408479850811097917_ld.m3u8?expire=1792508841&sign=dd324f7d136b47c1d1f1c2c18e0f0e44&exp_hrchy=h1&arch_hrchy=h1&major_anchor_level=common&t_id=037-202610132307214585B0D51DD6324D1187-vFG343"
+ },
+ "enter_live.json|True|LD": {
+  "flv": "http://pull-flv-q95.douyincdn.com/third/stream-408479850811097917_sd.flv?expire=1792508841&sign=df3acb2fbcbdbab150af53bfb13a9f7d&arch_hrchy=h1&exp_hrchy=h1&major_anchor_level=common&unique_id=stream-408479850811097917_829_flv_sd&t_id=037-202610132307214585B0D51DD6324D1187-vFG343",
+  "hls": "http://pull-hls-q95.douyincdn.com/third/stream-408479850811097917_sd.m3u8?expire=1792508841&sign=55fcf61d664cdfc59766ec123769eb27&arch_hrchy=h1&exp_hrchy=h1&major_anchor_level=common&t_id=037-202610132307214585B0D51DD6324D1187-vFG343"
+ },
+ "enter_live.json|False|OD": {
+  "flv": "http://pull-flv-q95.douyincdn.com/third/stream-408479850811097917_uhd.flv?expire=1792508841&sign=a61e294c9065f90804d28fd016c0e96c&arch_hrchy=h1&exp_hrchy=h1&major_anchor_level=common&unique_id=stream-408479850811097917_829_flv_uhd&t_id=037-202610132307214585B0D51DD6324D1187-vFG343",
+  "hls": "http://pull-hls-q95.douyincdn.com/third/stream-408479850811097917_uhd.m3u8?expire=1792508841&sign=32af7ea5df8a5a128a394028cce15bba&arch_hrchy=h1&exp_hrchy=h1&major_anchor_level=common&t_id=037-202610132307214585B0D51DD6324D1187-vFG343"
+ },
+ "enter_live.json|False|UHD": {
+  "flv": "http://pull-flv-q95.douyincdn.com/third/stream-408479850811097917_hd.flv?expire=1792508841&sign=8cae54faa87e8d2194a56b1ae53a62e0&arch_hrchy=h1&exp_hrchy=h1&major_anchor_level=common&unique_id=stream-408479850811097917_829_flv_hd&t_id=037-202610132307214585B0D51DD6324D1187-vFG343",
+  "hls": "http://pull-hls-q95.douyincdn.com/third/stream-408479850811097917_hd.m3u8?expire=1792508841&sign=383eb36922f9f45eb0499e8cfe2baefe&exp_hrchy=h1&major_anchor_level=common&arch_hrchy=h1&t_id=037-202610132307214585B0D51DD6324D1187-vFG343"
+ },
+ "enter_live.json|False|HD": {
+  "flv": "http://pull-flv-q95.douyincdn.com/third/stream-408479850811097917_ld.flv?expire=1792508841&sign=c99d671b30c39e0c276fe323ab7defc8&arch_hrchy=h1&major_anchor_level=common&exp_hrchy=h1&unique_id=stream-408479850811097917_829_flv_ld&t_id=037-202610132307214585B0D51DD6324D1187-vFG343",
+  "hls": "http://pull-hls-q95.douyincdn.com/third/stream-408479850811097917_ld.m3u8?expire=1792508841&sign=dd324f7d136b47c1d1f1c2c18e0f0e44&exp_hrchy=h1&arch_hrchy=h1&major_anchor_level=common&t_id=037-202610132307214585B0D51DD6324D1187-vFG343"
+ },
+ "enter_live.json|False|SD": {
+  "flv": "http://pull-flv-q95.douyincdn.com/third/stream-408479850811097917_sd.flv?expire=1792508841&sign=df3acb2fbcbdbab150af53bfb13a9f7d&arch_hrchy=h1&exp_hrchy=h1&major_anchor_level=common&unique_id=stream-408479850811097917_829_flv_sd&t_id=037-202610132307214585B0D51DD6324D1187-vFG343",
+  "hls": "http://pull-hls-q95.douyincdn.com/third/stream-408479850811097917_sd.m3u8?expire=1792508841&sign=55fcf61d664cdfc59766ec123769eb27&arch_hrchy=h1&exp_hrchy=h1&major_anchor_level=common&t_id=037-202610132307214585B0D51DD6324D1187-vFG343"
+ },
+ "enter_live.json|False|LD": {
+  "flv": "http://pull-flv-q95.douyincdn.com/third/stream-408479850811097917_ld.flv?expire=1792508841&sign=c99d671b30c39e0c276fe323ab7defc8&arch_hrchy=h1&major_anchor_level=common&exp_hrchy=h1&unique_id=stream-408479850811097917_829_flv_ld&t_id=037-202610132307214585B0D51DD6324D1187-vFG343",
+  "hls": "http://pull-hls-q95.douyincdn.com/third/stream-408479850811097917_ld.m3u8?expire=1792508841&sign=dd324f7d136b47c1d1f1c2c18e0f0e44&exp_hrchy=h1&arch_hrchy=h1&major_anchor_level=common&t_id=037-202610132307214585B0D51DD6324D1187-vFG343"
+ },
+ "reflow_live.json|True|OD": {
+  "flv": "http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_or4.flv?k=6d0f77dc94a70307&t=1792508904&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&major_anchor_level=common&unique_id=stream-120252524672319527_39_flv_or4&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq&codec=h264",
+  "hls": "http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_or4/index.m3u8?k=9a2eafb59ee5b66a&t=1792508904&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&major_anchor_level=common&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq&codec=h264"
+ },
+ "reflow_live.json|True|UHD": {
+  "flv": "http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_uhd.flv?k=95f3ed020f144a3e&t=1792508904&major_anchor_level=common&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&unique_id=stream-120252524672319527_39_flv_uhd&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq",
+  "hls": "http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_uhd/index.m3u8?k=53173e022be6cf52&t=1792508904&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&major_anchor_level=common&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq"
+ },
+ "reflow_live.json|True|HD": {
+  "flv": "http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_hd.flv?k=ced590f21ef9b7f2&t=1792508904&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&major_anchor_level=common&arch_hrchy=w1&unique_id=stream-120252524672319527_39_flv_hd&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq",
+  "hls": "http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_hd/index.m3u8?k=6c40f136153d258c&t=1792508904&major_anchor_level=common&arch_hrchy=w1&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq"
+ },
+ "reflow_live.json|True|SD": {
+  "flv": "http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_ld.flv?k=234b72c96160d0bf&t=1792508904&major_anchor_level=common&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&unique_id=stream-120252524672319527_39_flv_ld&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq",
+  "hls": "http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_ld/index.m3u8?k=7237e8508aea92a9&t=1792508904&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&major_anchor_level=common&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq"
+ },
+ "reflow_live.json|True|LD": {
+  "flv": "http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_sd.flv?k=bcd1b5f420630b53&t=1792508904&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&major_anchor_level=common&unique_id=stream-120252524672319527_39_flv_sd&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq",
+  "hls": "http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_sd/index.m3u8?k=1f7128a4ce3b6e4a&t=1792508904&arch_hrchy=w1&major_anchor_level=common&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq"
+ },
+ "reflow_live.json|False|OD": {
+  "flv": "http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_uhd.flv?k=95f3ed020f144a3e&t=1792508904&major_anchor_level=common&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&unique_id=stream-120252524672319527_39_flv_uhd&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq",
+  "hls": "http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_uhd/index.m3u8?k=53173e022be6cf52&t=1792508904&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&major_anchor_level=common&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq"
+ },
+ "reflow_live.json|False|UHD": {
+  "flv": "http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_hd.flv?k=ced590f21ef9b7f2&t=1792508904&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&major_anchor_level=common&arch_hrchy=w1&unique_id=stream-120252524672319527_39_flv_hd&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq",
+  "hls": "http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_hd/index.m3u8?k=6c40f136153d258c&t=1792508904&major_anchor_level=common&arch_hrchy=w1&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq"
+ },
+ "reflow_live.json|False|HD": {
+  "flv": "http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_ld.flv?k=234b72c96160d0bf&t=1792508904&major_anchor_level=common&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&unique_id=stream-120252524672319527_39_flv_ld&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq",
+  "hls": "http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_ld/index.m3u8?k=7237e8508aea92a9&t=1792508904&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&major_anchor_level=common&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq"
+ },
+ "reflow_live.json|False|SD": {
+  "flv": "http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_sd.flv?k=bcd1b5f420630b53&t=1792508904&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&major_anchor_level=common&unique_id=stream-120252524672319527_39_flv_sd&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq",
+  "hls": "http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_sd/index.m3u8?k=1f7128a4ce3b6e4a&t=1792508904&arch_hrchy=w1&major_anchor_level=common&exp_hrchy=w1&rtm_expr_tag=reflow_room_info&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq"
+ },
+ "reflow_live.json|False|LD": {
+  "flv": "http://pull-flv-l6.douyincdn.com/third/stream-120252524672319527_ld.flv?k=234b72c96160d0bf&t=1792508904&major_anchor_level=common&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&unique_id=stream-120252524672319527_39_flv_ld&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq",
+  "hls": "http://pull-hls-l6.douyincdn.com/third/stream-120252524672319527_ld/index.m3u8?k=7237e8508aea92a9&t=1792508904&rtm_expr_tag=reflow_room_info&arch_hrchy=w1&exp_hrchy=w1&major_anchor_level=common&t_id=037-20261013230824EE36F0A3395130AFA1A3-uvD6sq"
+ }
+}
