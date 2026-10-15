@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { detectPlatform, platformColor, platformName } from "@/lib/platforms";
 import { useStore } from "@/lib/store";
-import type { Rec, RecInput } from "@/lib/types";
+import type { Rec, RecInput, SettingsValues } from "@/lib/types";
 import { Button, cx, Dialog, Field, Input, Segmented, Select, Switch } from "./ui";
 
 interface Form {
@@ -59,11 +59,13 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
     setAdvanced(false);
     if (editing) {
       setF(fromRec(editing));
+      // only for the 保存目录 placeholder
+      api.settings().then((st) => setDefaultDir(st.default_save_path), () => undefined);
       return;
     }
     setF(null);
-    api.settings().then(({ values: v, default_save_path }) => {
-      setDefaultDir(default_save_path);
+    const init = (v: SettingsValues, defaultSavePath = "") => {
+      setDefaultDir(defaultSavePath);
       setF({
         urls: "",
         name: "",
@@ -81,7 +83,12 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
         notifyOnly: Boolean(v.only_notify_no_record),
         flvDirect: Boolean(v.flv_use_direct_download),
       });
-    });
+    };
+    // Without settings the form still works with built-in defaults, instead of a skeleton forever.
+    api.settings().then(
+      (st) => init(st.values, st.default_save_path),
+      () => init({}),
+    );
   }, [open, editing]);
 
   const lines = useMemo(
@@ -171,7 +178,7 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
           <div className="space-y-2">
             {editing ? (
               <Field label="直播间链接">
-                <Input value={f.urls} onChange={(e) => set("urls", e.target.value)} />
+                <Input autoFocus value={f.urls} onChange={(e) => set("urls", e.target.value)} />
               </Field>
             ) : (
               <>
@@ -181,7 +188,7 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
                   onChange={(e) => set("urls", e.target.value)}
                   onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === "Enter" && submit()}
                   rows={3}
-                  placeholder={"https://live.douyin.com/123456\nhttps://www.douyu.com/9999"}
+                  placeholder={"https://live.douyin.com/123456\nhttps://live.bilibili.com/22603"}
                   className="w-full resize-none rounded-xl border border-line bg-surface px-3.5 py-3 font-mono text-[12.5px] leading-6 text-fg placeholder:text-fg-3 focus:border-line-strong focus:ring-3 focus:ring-[var(--ring)] focus:outline-none"
                 />
                 {lines.length > 0 && (

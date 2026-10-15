@@ -4,7 +4,7 @@ import * as RSwitch from "@radix-ui/react-switch";
 import * as RTooltip from "@radix-ui/react-tooltip";
 import clsx from "clsx";
 import { Loader2, X } from "lucide-react";
-import { forwardRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
+import { forwardRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
 
 export const cx = clsx;
 
@@ -24,6 +24,17 @@ interface BtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon?: ReactNode;
 }
 
+/** Button styling for elements that must not be a <button>, e.g. a download link. */
+export function buttonClass(variant: Variant = "secondary", size: "sm" | "md" = "md", className?: string) {
+  return cx(
+    "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition",
+    "disabled:opacity-50 disabled:pointer-events-none select-none",
+    size === "sm" ? "h-7 px-2.5 text-[12.5px]" : "h-8.5 px-3.5 text-[13px]",
+    variants[variant],
+    className,
+  );
+}
+
 export const Button = forwardRef<HTMLButtonElement, BtnProps>(function Button(
   { variant = "secondary", size = "md", loading, icon, className, children, disabled, ...rest },
   ref,
@@ -32,13 +43,7 @@ export const Button = forwardRef<HTMLButtonElement, BtnProps>(function Button(
     <button
       ref={ref}
       disabled={disabled || loading}
-      className={cx(
-        "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition",
-        "disabled:opacity-50 disabled:pointer-events-none select-none",
-        size === "sm" ? "h-7 px-2.5 text-[12.5px]" : "h-8.5 px-3.5 text-[13px]",
-        variants[variant],
-        className,
-      )}
+      className={buttonClass(variant, size, className)}
       {...rest}
     >
       {loading ? <Loader2 className="size-3.5 animate-spin" /> : icon}
@@ -219,7 +224,7 @@ export function Field({ label, hint, children, inline }: { label: ReactNode; hin
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-2.5">
         <div className="min-w-[200px] flex-1">
           <div className="text-[13px] font-medium text-fg">{label}</div>
-          {hint && <div className="mt-0.5 text-[12px] leading-relaxed break-all text-fg-3">{hint}</div>}
+          {hint && <div className="mt-0.5 text-[12px] leading-relaxed [overflow-wrap:anywhere] text-fg-3">{hint}</div>}
         </div>
         <div className="max-w-full shrink-0">{children}</div>
       </div>
@@ -250,6 +255,7 @@ export function Dialog({
   footer?: ReactNode;
   width?: number;
 }) {
+  const [scrolled, setScrolled] = useState(false);
   return (
     <RDialog.Root open={open} onOpenChange={onOpenChange}>
       <RDialog.Portal>
@@ -257,9 +263,21 @@ export function Dialog({
         <RDialog.Content
           style={{ maxWidth: width }}
           {...(description ? {} : { "aria-describedby": undefined })}
+          onOpenAutoFocus={(e) => {
+            setScrolled(false);
+            // Radix focuses the first tabbable element, which is the close button in the header.
+            // Start on the first field instead (if the body has one), leaving the ✕ un-ringed.
+            const field = (e.currentTarget as HTMLElement).querySelector<HTMLElement>(
+              "[data-dialog-body] :is(input:not([type=hidden]),textarea,select):not(:disabled)",
+            );
+            if (field) {
+              e.preventDefault();
+              field.focus({ preventScroll: true });
+            }
+          }}
           className="fixed top-1/2 left-1/2 z-50 flex max-h-[min(88vh,820px)] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl border border-line bg-surface shadow-2xl animate-pop focus:outline-none"
         >
-          <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4">
+          <div className={cx("flex items-start justify-between gap-4 border-b px-6 pt-5 pb-4 transition-colors", scrolled ? "border-line" : "border-transparent")}>
             <div>
               <RDialog.Title className="text-[16px] font-semibold tracking-[-0.01em]">{title}</RDialog.Title>
               {description && <RDialog.Description className="mt-1 text-[12.5px] text-fg-3">{description}</RDialog.Description>}
@@ -268,7 +286,9 @@ export function Dialog({
               <X className="size-4" />
             </RDialog.Close>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-5">{children}</div>
+          <div data-dialog-body className="min-h-0 flex-1 overflow-y-auto px-6 pb-5" onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}>
+            {children}
+          </div>
           {footer && <div className="flex items-center justify-end gap-2 border-t border-line px-6 py-3.5">{footer}</div>}
         </RDialog.Content>
       </RDialog.Portal>
@@ -324,11 +344,20 @@ export function Confirm({
 export const Menu = RMenu.Root;
 export const MenuTrigger = RMenu.Trigger;
 
-export function MenuContent({ children, align = "end" }: { children: ReactNode; align?: "start" | "end" }) {
+export function MenuContent({
+  children,
+  align = "end",
+  side = "bottom",
+}: {
+  children: ReactNode;
+  align?: "start" | "end";
+  side?: "top" | "bottom" | "left" | "right";
+}) {
   return (
     <RMenu.Portal>
       <RMenu.Content
         align={align}
+        side={side}
         sideOffset={6}
         className="z-50 min-w-[180px] rounded-xl border border-line bg-surface p-1 shadow-xl animate-fade"
       >
@@ -369,8 +398,16 @@ export function MenuItem({
 
 export const MenuSep = () => <RMenu.Separator className="my-1 h-px bg-line" />;
 
-export function Kbd({ children }: { children: ReactNode }) {
+/** `inverted` sits on a primary button, so it inherits the button's text color instead of the surface tokens. */
+export function Kbd({ children, inverted }: { children: ReactNode; inverted?: boolean }) {
   return (
-    <kbd className="rounded border border-line bg-surface-2 px-1.5 py-px font-mono text-[10.5px] text-fg-3">{children}</kbd>
+    <kbd
+      className={cx(
+        "rounded border px-1.5 py-px font-mono text-[10.5px]",
+        inverted ? "border-current/25 text-current/70" : "border-line bg-surface-2 text-fg-3",
+      )}
+    >
+      {children}
+    </kbd>
   );
 }

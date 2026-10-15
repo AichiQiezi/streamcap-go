@@ -1,10 +1,11 @@
-import { Film, Loader2, Moon, Power, Radio, Settings2, Sun } from "lucide-react";
+import { Check, Film, Loader2, Monitor, Moon, Power, Radio, Settings2, Sun } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Toaster, toast } from "sonner";
-import { Confirm, cx, Tip, TipProvider } from "./components/ui";
+import { Confirm, cx, Menu, MenuContent, MenuItem, MenuTrigger, Tip, TipProvider } from "./components/ui";
 import { api } from "./lib/api";
 import { bytes } from "./lib/format";
 import { connectLive, useStore } from "./lib/store";
+import { type ThemeMode, useTheme } from "./lib/theme";
 import { LibraryPage } from "./pages/library";
 import { RoomsPage } from "./pages/rooms";
 import { SettingsPage } from "./pages/settings";
@@ -25,19 +26,6 @@ const readRoute = (): Route => {
   return r in ROUTES ? r : "rooms";
 };
 
-function useTheme() {
-  const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", dark);
-    try {
-      localStorage.setItem("sc-theme", dark ? "dark" : "light");
-    } catch {
-      /* storage unavailable */
-    }
-  }, [dark]);
-  return [dark, setDark] as const;
-}
-
 function Logo() {
   return (
     <svg viewBox="0 0 32 32" className="size-7" aria-hidden>
@@ -48,11 +36,44 @@ function Logo() {
   );
 }
 
+const THEMES: { value: ThemeMode; label: string; icon: typeof Sun }[] = [
+  { value: "system", label: "跟随系统", icon: Monitor },
+  { value: "light", label: "浅色", icon: Sun },
+  { value: "dark", label: "深色", icon: Moon },
+];
+
+function ThemeMenu() {
+  const { mode, resolved, setMode } = useTheme();
+  const Icon = mode === "system" ? Monitor : resolved === "dark" ? Moon : Sun;
+  return (
+    // A native title rather than <Tip>: focus returns to the trigger when the menu closes,
+    // which would reopen a Radix tooltip and leave it stuck on screen.
+    <Menu>
+      <MenuTrigger asChild>
+        <button
+          aria-label="切换外观"
+          title={`外观：${THEMES.find((t) => t.value === mode)!.label}`}
+          className="rounded-md p-1.5 text-fg-3 transition hover:bg-surface-2 hover:text-fg data-[state=open]:bg-surface-2 data-[state=open]:text-fg"
+        >
+          <Icon className="size-3.5" />
+        </button>
+      </MenuTrigger>
+      <MenuContent align="start" side="top">
+        {THEMES.map((t) => (
+          <MenuItem key={t.value} icon={<t.icon />} onSelect={() => setMode(t.value)}>
+            <span className="flex-1">{t.label}</span>
+            {mode === t.value && <Check className="size-3.5 text-fg" />}
+          </MenuItem>
+        ))}
+      </MenuContent>
+    </Menu>
+  );
+}
+
 function Sidebar({ route }: { route: Route }) {
   const conn = useStore((s) => s.conn);
   const disk = useStore((s) => s.disk);
   const recordingCount = useStore((s) => Object.values(s.recs).filter((r) => r.state === "recording").length);
-  const [dark, setDark] = useTheme();
   const [quitOpen, setQuitOpen] = useState(false);
   const used = disk ? 1 - disk.free / disk.total : 0;
 
@@ -113,15 +134,7 @@ function Sidebar({ route }: { route: Route }) {
             </span>
           </Tip>
           <div className="flex items-center gap-0.5 max-lg:flex-col">
-            <Tip label={dark ? "切换到浅色" : "切换到深色"} side="right">
-              <button
-                onClick={() => setDark(!dark)}
-                aria-label="切换主题"
-                className="rounded-md p-1.5 text-fg-3 transition hover:bg-surface-2 hover:text-fg"
-              >
-                {dark ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
-              </button>
-            </Tip>
+            <ThemeMenu />
             <Tip label="退出 StreamCap" side="right">
               <button
                 onClick={() => setQuitOpen(true)}
@@ -188,6 +201,7 @@ function QuittingOverlay() {
 }
 
 export function App() {
+  const { resolved } = useTheme();
   const route = useSyncExternalStore(subscribeHash, readRoute);
   useEffect(() => connectLive(), []);
   const { Page, label } = ROUTES[route];
@@ -207,6 +221,7 @@ export function App() {
       <QuittingOverlay />
       <Toaster
         position="bottom-right"
+        theme={resolved}
         toastOptions={{
           className: "!bg-surface !text-fg !border-line !shadow-xl !rounded-xl !text-[13px] !font-sans",
         }}

@@ -1,19 +1,92 @@
-import { FileAudio, FileVideo, FolderOpen, Play, RefreshCw, Search, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, FileAudio, FileVideo, Film, FolderOpen, Play, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PlayerDialog } from "@/components/player";
 import { Button, Confirm, cx, IconButton, Input, Select } from "@/components/ui";
 import { api } from "@/lib/api";
-import { useStore } from "@/lib/store";
 import { ago, bytes } from "@/lib/format";
+import { platformColor, platformName } from "@/lib/platforms";
+import { useStore } from "@/lib/store";
 import type { MediaFile } from "@/lib/types";
 
-/** "斗鱼直播/玩机器/original" -> { group: "玩机器", platform: "斗鱼直播", original: true } */
-function describe(folder: string) {
-  const parts = folder.split("/").filter(Boolean);
+/** Top-level folder names the backend uses with "按平台建文件夹" (display names, or keys with 英文路径命名). */
+const PLATFORM_DIRS: Record<string, string> = { 抖音: "douyin", douyin: "douyin", B站: "bilibili", bilibili: "bilibili" };
+
+/** Recordings are named `主播_2026-10-14_19-58-02[_标题][_p2][_001].ext` (internal/monitor/paths.go). */
+const NAME_RE = /^(.+?)_(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})(.*)$/;
+
+interface Desc {
+  streamer: string;
+  platformKey: string | null;
+  original: boolean;
+  /** start time (+ live title) parsed from the file name, or the bare name when it doesn't match */
+  label: string;
+  title: string | null;
+  /** "p2" for a part split off by a reconnect, "#001" for a timed segment */
+  tags: string[];
+}
+
+function describe(f: MediaFile): Desc {
+  const parts = f.folder.split("/").filter(Boolean);
   const original = parts[parts.length - 1] === "original";
-  const core = original ? parts.slice(0, -1) : parts;
-  return { group: core[core.length - 1] || "未分组", platform: core.length > 1 ? core[0] : "", original };
+  const platformKey = PLATFORM_DIRS[parts[0]] ?? null;
+  const stem = f.ext ? f.name.slice(0, -(f.ext.length + 1)) : f.name;
+  const m = NAME_RE.exec(stem);
+  if (!m) {
+    // Not one of ours: fall back to the folder layout (platform / streamer / …).
+    const core = parts.slice(platformKey ? 1 : 0, original ? -1 : undefined);
+    return { streamer: core[0] || "未分组", platformKey, original, label: stem, title: null, tags: [] };
+  }
+  let rest = m[6];
+  const tags: string[] = [];
+  const seg = /_(\d{3})$/.exec(rest);
+  if (seg) {
+    tags.unshift(`#${seg[1]}`);
+    rest = rest.slice(0, seg.index);
+  }
+  const part = /_p(\d+)$/.exec(rest);
+  if (part) {
+    tags.unshift(`p${part[1]}`);
+    rest = rest.slice(0, part.index);
+  }
+  return {
+    streamer: m[1],
+    platformKey,
+    original,
+    label: `${m[2]} ${m[3]}:${m[4]}:${m[5]}`,
+    title: rest.replace(/^_/, "") || null,
+    tags,
+  };
+}
+
+type SortKey = "time" | "size" | "name";
+
+function SortHead({
+  k,
+  sort,
+  onSort,
+  children,
+  className,
+}: {
+  k: SortKey;
+  sort: { key: SortKey; desc: boolean };
+  onSort: (k: SortKey) => void;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const active = sort.key === k;
+  const Arrow = sort.desc ? ArrowDown : ArrowUp;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(k)}
+      aria-sort={active ? (sort.desc ? "descending" : "ascending") : undefined}
+      className={cx("inline-flex items-center gap-1 transition hover:text-fg", active && "text-fg-2", className)}
+    >
+      {children}
+      <Arrow className={cx("size-3", active ? "opacity-100" : "opacity-0")} />
+    </button>
+  );
 }
 
 export function LibraryPage() {
@@ -25,6 +98,7 @@ export function LibraryPage() {
   const [playing, setPlaying] = useState<MediaFile | null>(null);
   const [deleting, setDeleting] = useState<MediaFile | null>(null);
   const [loading, setLoading] = useState(false);
+  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "time", desc: true });
   const activeFiles = useStore((st) =>
     Object.values(st.recs)
       .filter((r) => r.state === "recording" && r.stats.file)
@@ -56,26 +130,38 @@ export function LibraryPage() {
     load();
   }, [load]);
 
+  const described = useMemo(() => new Map((files ?? []).map((f) => [f.path, describe(f)])), [files]);
+  const desc = (f: MediaFile) => described.get(f.path)!;
+
   const groups = useMemo(() => {
     const m = new Map<string, number>();
     (files ?? []).forEach((f) => {
-      const g = describe(f.folder).group;
+      const g = described.get(f.path)!.streamer;
       m.set(g, (m.get(g) ?? 0) + 1);
     });
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
-  }, [files]);
+  }, [files, described]);
 
-  const originals = (files ?? []).filter((f) => describe(f.folder).original).length;
+  const originals = (files ?? []).filter((f) => described.get(f.path)?.original).length;
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return (files ?? []).filter((f) => {
-      const d = describe(f.folder);
+    const list = (files ?? []).filter((f) => {
+      const d = described.get(f.path)!;
       if (!showOriginal && d.original) return false;
-      if (group !== "all" && d.group !== group) return false;
+      if (group !== "all" && d.streamer !== group) return false;
       return !q || f.name.toLowerCase().includes(q) || f.folder.toLowerCase().includes(q);
     });
-  }, [files, query, group, showOriginal]);
+    const by: Record<SortKey, (a: MediaFile, b: MediaFile) => number> = {
+      time: (a, b) => a.mtime - b.mtime,
+      size: (a, b) => a.size - b.size,
+      name: (a, b) => a.name.localeCompare(b.name, "zh-CN"),
+    };
+    return list.sort((a, b) => (sort.desc ? -1 : 1) * by[sort.key](a, b));
+  }, [files, described, query, group, showOriginal, sort]);
+
+  const onSort = (key: SortKey) =>
+    setSort((s) => (s.key === key ? { key, desc: !s.desc } : { key, desc: key !== "name" }));
 
   const total = visible.reduce((s, f) => s + f.size, 0);
 
@@ -132,10 +218,16 @@ export function LibraryPage() {
 
       <div className="mt-4 overflow-hidden rounded-xl border border-line bg-surface">
         <div className="grid grid-cols-[minmax(0,1fr)_80px_96px] md:grid-cols-[minmax(0,1fr)_200px_90px_110px_112px] gap-4 border-b border-line px-4 py-2 text-[11.5px] font-medium text-fg-3">
-          <span>文件</span>
+          <SortHead k="name" sort={sort} onSort={onSort}>
+            文件
+          </SortHead>
           <span className="max-md:hidden">主播</span>
-          <span className="text-right">大小</span>
-          <span className="max-md:hidden">时间</span>
+          <SortHead k="size" sort={sort} onSort={onSort} className="flex-row-reverse justify-self-end">
+            大小
+          </SortHead>
+          <SortHead k="time" sort={sort} onSort={onSort} className="max-md:hidden">
+            修改时间
+          </SortHead>
           <span />
         </div>
         {files === null ? (
@@ -145,10 +237,18 @@ export function LibraryPage() {
             ))}
           </div>
         ) : visible.length === 0 ? (
-          <div className="py-16 text-center text-[13px] text-fg-3">{files.length ? "没有符合条件的文件" : "还没有录像，开始录制后会出现在这里"}</div>
+          <div className="flex flex-col items-center gap-3 py-16 text-center">
+            <span className="flex size-11 items-center justify-center rounded-xl border border-line bg-surface-2 text-fg-3">
+              {files.length ? <Search className="size-4.5" /> : <Film className="size-4.5" />}
+            </span>
+            <div>
+              <div className="text-[13.5px] font-medium text-fg">{files.length ? "没有符合条件的文件" : "还没有录像"}</div>
+              <div className="mt-1 text-[12.5px] text-fg-3">{files.length ? "换个关键词或主播试试" : "开始录制后，录好的文件会出现在这里"}</div>
+            </div>
+          </div>
         ) : (
           visible.map((f) => {
-            const d = describe(f.folder);
+            const d = desc(f);
             const Icon = f.kind === "audio" ? FileAudio : FileVideo;
             return (
               <div
@@ -165,11 +265,17 @@ export function LibraryPage() {
                     <Icon className="size-3.5 group-hover:hidden" />
                     <Play className="hidden size-3.5 group-hover:block" fill="currentColor" />
                   </button>
-                  <span className="truncate font-medium text-fg" title={f.name}>
-                    {f.name}
+                  <span className="min-w-0 truncate" title={f.name}>
+                    <span className="font-mono font-medium text-fg tabular">{d.label}</span>
+                    {d.title && <span className="text-fg-2"> · {d.title}</span>}
                   </span>
                   <span className="shrink-0 rounded border border-line px-1 font-mono text-[10.5px] text-fg-3 uppercase">{f.ext}</span>
-                  {d.original && <span className="shrink-0 rounded bg-surface-3 px-1.5 text-[10.5px] text-fg-3">原始</span>}
+                  {d.tags.map((t) => (
+                    <span key={t} className="shrink-0 rounded bg-surface-3 px-1 font-mono text-[10.5px] text-fg-2" title={t.startsWith("p") ? "断流重连后的续录部分" : "分段录制的分段"}>
+                      {t}
+                    </span>
+                  ))}
+                  {d.original && <span className="shrink-0 rounded bg-surface-3 px-1.5 text-[10.5px] text-fg-2">原始</span>}
                   {isActive(f) && (
                     <span className="inline-flex shrink-0 items-center gap-1 rounded bg-rec/12 px-1.5 text-[10.5px] font-medium text-rec">
                       <span className="size-1.5 rounded-full bg-rec animate-rec" />
@@ -177,12 +283,13 @@ export function LibraryPage() {
                     </span>
                   )}
                 </div>
-                <span className="truncate text-fg-2 max-md:hidden" title={f.folder}>
-                  {d.group}
-                  {d.platform && <span className="text-fg-3"> · {d.platform.replace(/直播$/, "")}</span>}
+                <span className="flex min-w-0 items-center gap-1.5 text-fg-2 max-md:hidden" title={f.folder}>
+                  {d.platformKey && <span className="size-1.5 shrink-0 rounded-full" style={{ background: platformColor(d.platformKey) }} />}
+                  <span className="truncate">{d.streamer}</span>
+                  {d.platformKey && <span className="shrink-0 text-fg-3">{platformName(d.platformKey)}</span>}
                 </span>
                 <span className="text-right font-mono tabular text-fg-2">{bytes(f.size)}</span>
-                <span className="text-fg-3 max-md:hidden" title={new Date(f.mtime * 1000).toLocaleString()}>
+                <span className="text-fg-3 tabular max-md:hidden" title={new Date(f.mtime * 1000).toLocaleString()}>
                   {ago(f.mtime)}
                 </span>
                 <div className="flex justify-end gap-0.5 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">

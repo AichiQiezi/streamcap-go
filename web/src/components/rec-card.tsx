@@ -30,17 +30,31 @@ export function Cover({ r, compact }: { r: Rec; compact?: boolean }) {
   const [failed, setFailed] = useState<string | null>(null);
   const color = platformColor(r.platform_key);
   const dim = !live;
-  if (!src || failed === src)
+  if (!src || failed === src) {
+    // Idle rooms get a quiet placeholder so the few live ones stand out in a long grid.
+    const initial = (r.name || "?").slice(0, 1);
     return (
       <div
         className="absolute inset-0 flex items-center justify-center"
-        style={{ background: `radial-gradient(120% 90% at 30% 20%, color-mix(in srgb, ${color} 26%, transparent), transparent 60%), var(--surface-2)` }}
+        style={{
+          background: `radial-gradient(120% 90% at 30% 20%, color-mix(in srgb, ${color} var(${dim ? "--tint-idle" : "--tint"}), transparent), transparent 65%), var(--surface-2)`,
+        }}
       >
-        <span className={cx("font-semibold text-fg/70 select-none", compact ? "text-[13px]" : "text-[34px] tracking-tight")}>
-          {(r.name || "?").slice(0, 1)}
-        </span>
+        {compact ? (
+          <span className="text-[13px] font-semibold text-fg-2 select-none">{initial}</span>
+        ) : (
+          <span
+            className={cx(
+              "flex items-center justify-center rounded-full font-semibold tracking-tight select-none",
+              dim ? "size-14 bg-surface/70 text-[22px] text-fg-3 ring-1 ring-line" : "size-16 bg-surface/80 text-[26px] text-fg ring-1 ring-line-strong",
+            )}
+          >
+            {initial}
+          </span>
+        )}
       </div>
     );
+  }
   return (
     <>
       <img src={src} alt="" aria-hidden loading="lazy" decoding="async" className="absolute inset-0 size-full scale-125 object-cover opacity-50 blur-xl" />
@@ -119,7 +133,7 @@ export const RecCard = memo(function RecCard({ r, selected, onSelect, onEdit, on
           {recording ? (
             <RecPill r={r} />
           ) : r.state === "reconnecting" ? (
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-warn px-1.5 py-0.5 text-[11px] font-semibold text-black/80">
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-warn px-1.5 py-0.5 text-[11px] font-semibold text-on-warn">
               <Loader2 className="size-3 animate-spin" />
               重连中
             </span>
@@ -146,28 +160,28 @@ export const RecCard = memo(function RecCard({ r, selected, onSelect, onEdit, on
         <p className="truncate text-[12.5px] text-fg-2" title={r.live_title ?? undefined}>
           {r.live_title || <span className="text-fg-3">{r.url.replace(/^https?:\/\/(www\.)?/, "")}</span>}
         </p>
-        <div className="mt-1 flex h-5 items-center gap-3 text-[12px] text-fg-3">
+        <div className="mt-1 flex h-5 min-w-0 items-center gap-3 overflow-hidden text-[12px] whitespace-nowrap text-fg-3">
           {recording ? (
             <>
               <Tip label="下载速度">
-                <span className="font-mono tabular text-fg-2">{rate(r.stats.speed_bps)}</span>
+                <span className="shrink-0 font-mono tabular text-fg-2">{rate(r.stats.speed_bps)}</span>
               </Tip>
-              <span className="h-3 w-px bg-line-strong" />
+              <span className="h-3 w-px shrink-0 bg-line-strong" />
               <Tip label="本次已录大小">
-                <span className="font-mono tabular">{bytes(r.stats.size_bytes)}</span>
+                <span className="shrink-0 font-mono tabular">{bytes(r.stats.size_bytes)}</span>
               </Tip>
               {r.reconnects > 0 ? (
                 <>
-                  <span className="h-3 w-px bg-line-strong" />
+                  <span className="h-3 w-px shrink-0 bg-line-strong" />
                   <Tip label={r.last_error ? `上次中断：${r.last_error}` : "本场直播中断后已自动接上"}>
-                    <span className="text-warn">已自动重连 {r.reconnects} 次</span>
+                    <span className="min-w-0 truncate text-warn">已重连 {r.reconnects} 次</span>
                   </Tip>
                 </>
               ) : (
                 r.stats.vcodec && (
                   <>
-                    <span className="h-3 w-px bg-line-strong" />
-                    <span className="font-mono uppercase">{r.stats.vcodec}</span>
+                    <span className="h-3 w-px shrink-0 bg-line-strong" />
+                    <span className="min-w-0 truncate font-mono uppercase">{r.stats.vcodec}</span>
                   </>
                 )
               )}

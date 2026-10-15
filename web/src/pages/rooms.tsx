@@ -168,7 +168,7 @@ export function RoomsPage() {
           }}
         >
           添加直播间
-          <Kbd>N</Kbd>
+          <Kbd inverted>N</Kbd>
         </Button>
       </header>
 
@@ -246,8 +246,8 @@ export function RoomsPage() {
             ))}
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-line bg-surface">
-            <div className="min-w-[1080px]">
+          <div className="@container overflow-x-auto rounded-xl border border-line bg-surface">
+            <div className="min-w-[720px]">
               <RowHeader />
               {visible.map((r) => (
                 <ItemComp key={r.id} r={r} selected={selected.has(r.id)} onSelect={toggle} onEdit={onEdit} onDelete={onDelete} />

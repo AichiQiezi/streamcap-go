@@ -7,11 +7,15 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>StreamCap</title>
     <script>
-      try {
-        const t = localStorage.getItem("sc-theme");
-        const dark = t ? t === "dark" : true;
-        document.documentElement.classList.toggle("dark", dark);
-      } catch { document.documentElement.classList.add("dark"); }
+      // Resolve the theme before first paint (see src/lib/theme.ts). Default: follow the OS.
+      (function () {
+        var t = null;
+        try { t = localStorage.getItem("sc-theme"); } catch (e) {}
+        var dark = t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+        var root = document.documentElement;
+        root.classList.toggle("dark", dark);
+        root.style.colorScheme = dark ? "dark" : "light";
+      })();
     </script>
   </head>
   <body>

@@ -1,10 +1,11 @@
-import { ChevronDown, Eye, EyeOff } from "lucide-react";
+import { ChevronDown, CircleAlert, Eye, EyeOff, Monitor, Moon, Sun } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button, cx, Field, Input, Segmented, Select, Switch } from "@/components/ui";
 import { api } from "@/lib/api";
 import { COOKIE_HINTS, COOKIE_PLATFORMS, platformColor, platformName } from "@/lib/platforms";
 import { useStore } from "@/lib/store";
+import { type ThemeMode, useTheme } from "@/lib/theme";
 import type { SettingsValues } from "@/lib/types";
 
 type Kind = "switch" | "text" | "secret" | "number" | "select" | "segmented";
@@ -82,7 +83,7 @@ function sections(qualities: { value: string; label: string }[], formats: string
       id: "record",
       title: "录制",
       items: [
-        { key: "live_save_path", label: "保存目录", kind: "text", mono: true, width: "w-[360px]", hint: "所有录像的根目录，留空使用程序目录下的 downloads" },
+        { key: "live_save_path", label: "保存目录", kind: "text", mono: true, width: "w-[360px]", hint: "所有录像的根目录；留空使用输入框里显示的默认目录" },
         { key: "record_quality", label: "默认画质", kind: "segmented", options: qualities, hint: "新添加直播间时的默认值" },
         { key: "video_format", label: "默认格式", kind: "select", options: formats.map((f) => ({ value: f, label: f })) },
         { key: "loop_time_seconds", label: "开播检测间隔", kind: "number", suffix: "秒", hint: "太短可能被平台限流，建议不低于 60 秒" },
@@ -140,8 +141,44 @@ function sections(qualities: { value: string; label: string }[], formats: string
   ];
 }
 
-function Control({ item, value, onChange }: { item: Item; value: unknown; onChange: (v: string | boolean) => void }) {
+function SecretInput({
+  value,
+  onChange,
+  className,
+  wrapperClassName,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  className?: string;
+  wrapperClassName?: string;
+  placeholder?: string;
+}) {
   const [reveal, setReveal] = useState(false);
+  return (
+    <div className={cx("relative", wrapperClassName)}>
+      <Input
+        type={reveal ? "text" : "password"}
+        className={cx("h-8 pr-8", className)}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete="off"
+        spellCheck={false}
+      />
+      <button
+        type="button"
+        aria-label={reveal ? "隐藏" : "显示"}
+        onClick={() => setReveal((r) => !r)}
+        className="absolute top-1/2 right-2 -translate-y-1/2 text-fg-3 hover:text-fg"
+      >
+        {reveal ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+      </button>
+    </div>
+  );
+}
+
+function Control({ item, value, onChange }: { item: Item; value: unknown; onChange: (v: string | boolean) => void }) {
   const str = value == null ? "" : String(value);
   switch (item.kind) {
     case "switch":
@@ -159,19 +196,12 @@ function Control({ item, value, onChange }: { item: Item; value: unknown; onChan
       );
     case "secret":
       return (
-        <div className="relative">
-          <Input
-            type={reveal ? "text" : "password"}
-            className={cx("h-8 pr-8", item.width ?? "w-[320px]", item.mono && "font-mono text-[12px]")}
-            value={str}
-            placeholder={item.placeholder}
-            onChange={(e) => onChange(e.target.value)}
-            autoComplete="off"
-          />
-          <button type="button" aria-label={reveal ? "隐藏" : "显示"} onClick={() => setReveal((r) => !r)} className="absolute top-1/2 right-2 -translate-y-1/2 text-fg-3 hover:text-fg">
-            {reveal ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-          </button>
-        </div>
+        <SecretInput
+          className={cx(item.width ?? "w-[320px]", item.mono && "font-mono text-[12px]")}
+          value={str}
+          placeholder={item.placeholder}
+          onChange={onChange}
+        />
       );
     default:
       return (
@@ -180,9 +210,28 @@ function Control({ item, value, onChange }: { item: Item; value: unknown; onChan
           value={str}
           placeholder={item.placeholder}
           onChange={(e) => onChange(e.target.value)}
+          spellCheck={item.mono ? false : undefined}
         />
       );
   }
+}
+
+const THEME_OPTIONS: { value: ThemeMode; label: React.ReactNode }[] = [
+  { value: "system", label: <><Monitor className="size-3.5" />跟随系统</> },
+  { value: "light", label: <><Sun className="size-3.5" />浅色</> },
+  { value: "dark", label: <><Moon className="size-3.5" />深色</> },
+];
+
+/** Applies immediately and lives in this browser only, so it's outside the save bar's draft. */
+function AppearanceCard() {
+  const { mode, setMode } = useTheme();
+  return (
+    <Card id="appearance" title="外观">
+      <Field inline label="主题" hint="跟随系统时，会随系统的浅色 / 深色模式自动切换">
+        <Segmented size="sm" value={mode} onChange={setMode} options={THEME_OPTIONS} />
+      </Field>
+    </Card>
+  );
 }
 
 function Card({ id, title, desc, children }: { id: string; title: string; desc?: string; children: React.ReactNode }) {
@@ -204,26 +253,33 @@ export function SettingsPage() {
   const [defaultPath, setDefaultPath] = useState("");
   const [saving, setSaving] = useState(false);
   const [openChannel, setOpenChannel] = useState<string | null>(null);
-  const [active, setActive] = useState("record");
+  const [active, setActive] = useState("appearance");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    api.settings().then((s) => {
-      setSaved(s.values);
-      setDraft(s.values);
-      setCookiesSaved(s.cookies);
-      setCookies(s.cookies);
-      setDefaultPath(s.default_save_path);
-    });
-  }, []);
+  const load = () => {
+    setLoadError(null);
+    api
+      .settings()
+      .then((s) => {
+        setSaved(s.values);
+        setDraft(s.values);
+        setCookiesSaved(s.cookies);
+        setCookies(s.cookies);
+        setDefaultPath(s.default_save_path);
+      })
+      .catch((e: Error) => setLoadError(e.message));
+  };
+  useEffect(load, []);
 
   const secs = useMemo(() => sections(options.qualities, [...options.video_formats, ...options.audio_formats]), [options]);
-  const nav = [...secs.map((s) => ({ id: s.id, title: s.title })), { id: "channels", title: "推送渠道" }, { id: "cookies", title: "平台 Cookie" }];
+  const nav = [{ id: "appearance", title: "外观" }, ...secs.map((s) => ({ id: s.id, title: s.title })), { id: "channels", title: "推送渠道" }, { id: "cookies", title: "平台 Cookie" }];
 
   const changed = saved ? Object.keys(draft).filter((k) => draft[k] !== saved[k]) : [];
   const cookieChanged = [...new Set([...Object.keys(cookies), ...Object.keys(cookiesSaved)])].filter((k) => (cookies[k] ?? "") !== (cookiesSaved[k] ?? ""));
   const dirty = changed.length + cookieChanged.length > 0;
 
+  const enabledChannels = CHANNELS.filter((c) => Boolean(draft[c.enable])).length;
   const set = (k: string, v: string | boolean) => setDraft((d) => ({ ...d, [k]: v }));
 
   async function save() {
@@ -244,17 +300,34 @@ export function SettingsPage() {
   useEffect(() => {
     const root = scroller.current?.closest("main");
     if (!root) return;
-    const obs = new IntersectionObserver(
-      (entries) => entries.forEach((e) => e.isIntersecting && setActive(e.target.id)),
-      { root, rootMargin: "-10% 0px -75% 0px" },
-    );
-    nav.forEach((n) => {
-      const el = document.getElementById(n.id);
-      if (el) obs.observe(el);
-    });
-    return () => obs.disconnect();
+    // The current section is the last one whose heading has scrolled past a line near the top.
+    // At the very bottom the last sections are too short to get there, so pin the last one.
+    const update = () => {
+      if (root.scrollTop + root.clientHeight >= root.scrollHeight - 4) return setActive(nav[nav.length - 1].id);
+      const line = root.getBoundingClientRect().top + 96;
+      let current = nav[0].id;
+      for (const n of nav) {
+        const el = document.getElementById(n.id);
+        if (el && el.getBoundingClientRect().top <= line) current = n.id;
+      }
+      setActive(current);
+    };
+    update();
+    root.addEventListener("scroll", update, { passive: true });
+    return () => root.removeEventListener("scroll", update);
   }, [saved]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  if (loadError)
+    return (
+      <div className="mx-auto flex max-w-[1080px] flex-col items-center gap-3 px-8 pt-24 text-center">
+        <CircleAlert className="size-6 text-err" />
+        <div className="text-[14px] font-medium">设置加载失败</div>
+        <div className="max-w-md text-[12.5px] text-fg-3">{loadError}</div>
+        <Button className="mt-2" onClick={load}>
+          重试
+        </Button>
+      </div>
+    );
   if (!saved)
     return (
       <div className="mx-auto max-w-[1080px] space-y-4 px-8 pt-7">
@@ -290,13 +363,18 @@ export function SettingsPage() {
       </aside>
 
       <div className="space-y-9 pt-1">
+        <AppearanceCard />
         {secs.map((s) => (
           <Card key={s.id} id={s.id} title={s.title} desc={s.desc}>
             {s.items
               .filter((it) => !it.when || it.when(draft))
               .map((it) => (
-                <Field key={it.key} inline label={it.label} hint={it.key === "live_save_path" ? `${it.hint}（当前：${defaultPath}）` : it.hint}>
-                  <Control item={it} value={draft[it.key]} onChange={(v) => set(it.key, v)} />
+                <Field key={it.key} inline label={it.label} hint={it.hint}>
+                  <Control
+                    item={it.key === "live_save_path" ? { ...it, placeholder: defaultPath } : it}
+                    value={draft[it.key]}
+                    onChange={(v) => set(it.key, v)}
+                  />
                 </Field>
               ))}
           </Card>
@@ -304,15 +382,23 @@ export function SettingsPage() {
 
         <section id="channels" className="scroll-mt-6">
           <h2 className="text-[15px] font-semibold tracking-[-0.01em]">推送渠道</h2>
-          <p className="mt-1 text-[12.5px] text-fg-3">开播 / 下播通知会发到所有已启用的渠道</p>
-          <div className="mt-3 grid gap-2">
+          <p className="mt-1 text-[12.5px] text-fg-3">
+            开播 / 下播通知会发到所有已启用的渠道
+            {enabledChannels > 0 && <span className="text-fg-2">，当前已启用 {enabledChannels} 个</span>}
+          </p>
+          <div className="mt-3 divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
             {CHANNELS.map((c) => {
               const on = Boolean(draft[c.enable]);
               const open = openChannel === c.id;
               return (
-                <div key={c.id} className="rounded-xl border border-line bg-surface">
-                  <div className="flex items-center gap-3 px-5 py-3">
-                    <button type="button" onClick={() => setOpenChannel(open ? null : c.id)} className="flex flex-1 items-center gap-2.5 text-left">
+                <div key={c.id}>
+                  <div className="flex items-center gap-3 px-4 py-2.5 md:px-5">
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      onClick={() => setOpenChannel(open ? null : c.id)}
+                      className="-my-1 flex flex-1 items-center gap-2.5 rounded-md py-1 text-left"
+                    >
                       <ChevronDown className={cx("size-3.5 text-fg-3 transition", !open && "-rotate-90")} />
                       <span className="text-[13px] font-medium">{c.name}</span>
                       {on && <span className="rounded bg-ok/12 px-1.5 py-px text-[11px] font-medium text-ok">已启用</span>}
@@ -320,7 +406,7 @@ export function SettingsPage() {
                     <Switch checked={on} onChange={(v) => { set(c.enable, v); if (v) setOpenChannel(c.id); }} label={`启用${c.name}`} />
                   </div>
                   {open && (
-                    <div className="divide-y divide-line border-t border-line px-5">
+                    <div className="divide-y divide-line border-t border-line bg-surface-2/50 px-4 md:px-5 md:pl-11">
                       {c.items.map((it) => (
                         <Field key={it.key} inline label={it.label} hint={it.hint}>
                           <Control item={it} value={draft[it.key]} onChange={(v) => set(it.key, v)} />
@@ -349,13 +435,12 @@ export function SettingsPage() {
                   {platformName(k)}
                 </span>
                 {COOKIE_HINTS[k] && <span className="order-last w-full text-[12px] text-fg-3 sm:pl-32">{COOKIE_HINTS[k]}</span>}
-                <Input
-                  className="h-8 min-w-[240px] flex-1 font-mono text-[11.5px]"
+                <SecretInput
+                  wrapperClassName="min-w-[240px] flex-1"
+                  className="font-mono text-[11.5px]"
                   placeholder="粘贴 Cookie 字符串"
                   value={cookies[k] ?? ""}
-                  onChange={(e) => setCookies((c) => ({ ...c, [k]: e.target.value }))}
-                  autoComplete="off"
-                  spellCheck={false}
+                  onChange={(v) => setCookies((c) => ({ ...c, [k]: v }))}
                 />
               </div>
             ))}

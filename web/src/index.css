@@ -6,7 +6,9 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* Tokens: neutral graphite surfaces; red is reserved for "recording". */
+/* Text tokens (fg-2/fg-3, status colors) clear 4.5:1 on --surface and --bg in both themes (warn: 4.4:1 on light --bg). */
 :root {
+  color-scheme: light;
   --bg: #f6f6f7;
   --surface: #ffffff;
   --surface-2: #f1f1f3;
@@ -15,21 +17,26 @@
   --line-strong: #d1d1d7;
   --fg: #16171a;
   --fg-2: #55575e;
-  --fg-3: #8b8d94;
+  --fg-3: #6e7078;
   --primary: #16171a;
   --primary-fg: #ffffff;
-  --rec: #e5352b;
-  --live: #0a84c6;
-  --ok: #1a9a5a;
-  --warn: #c77700;
-  --err: #d6402f;
-  --sched: #7a5af5;
+  --rec: #d22f26;
+  --live: #0a74ae;
+  --ok: #157f48;
+  --warn: #a96200;
+  --on-warn: #ffffff;
+  --err: #cf3828;
+  --sched: #7152f0;
   --ring: rgba(22, 23, 26, 0.18);
   --shadow: 0 1px 2px rgba(16, 17, 20, 0.05), 0 4px 16px -6px rgba(16, 17, 20, 0.08);
   --overlay: rgba(10, 10, 12, 0.42);
+  /* how strongly a platform color tints a cover placeholder */
+  --tint: 16%;
+  --tint-idle: 7%;
 }
 
 .dark {
+  color-scheme: dark;
   --bg: #0c0d0f;
   --surface: #131417;
   --surface-2: #1a1b1f;
@@ -38,18 +45,21 @@
   --line-strong: #2e3036;
   --fg: #ededef;
   --fg-2: #a2a4ab;
-  --fg-3: #6c6f77;
+  --fg-3: #80838b;
   --primary: #ededef;
   --primary-fg: #0c0d0f;
   --rec: #ff453a;
   --live: #3aa8ff;
   --ok: #32c57a;
   --warn: #f2a33a;
+  --on-warn: rgba(0, 0, 0, 0.82);
   --err: #ff5f4f;
   --sched: #9d86ff;
   --ring: rgba(237, 237, 239, 0.22);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -10px rgba(0, 0, 0, 0.6);
   --overlay: rgba(0, 0, 0, 0.6);
+  --tint: 26%;
+  --tint-idle: 6%;
 }
 
 @theme inline {
@@ -68,6 +78,7 @@
   --color-live: var(--live);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
+  --color-on-warn: var(--on-warn);
   --color-err: var(--err);
   --color-sched: var(--sched);
   --font-sans: "Inter Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
@@ -80,6 +91,15 @@
   body,
   #root {
     height: 100%;
+  }
+  html {
+    background: var(--bg);
+  }
+  .theme-switching,
+  .theme-switching *,
+  .theme-switching *::before,
+  .theme-switching *::after {
+    transition: none !important;
   }
   body {
     background: var(--bg);

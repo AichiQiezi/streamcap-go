@@ -6,8 +6,12 @@ import { Cover, qualityLabel, SelectBox, type RecItemProps } from "./rec-card";
 import { StatusPill } from "./status";
 import { cx, Switch } from "./ui";
 
+// Speed / size / quality only show once the list is wide enough; below that the row keeps the
+// monitor switch and actions on screen instead of scrolling them out of view. Needs an
+// `@container` ancestor (see RoomsPage).
 export const ROW_GRID =
-  "grid grid-cols-[28px_minmax(220px,2.4fr)_88px_120px_84px_96px_88px_72px_56px_108px] items-center gap-3";
+  "grid grid-cols-[28px_minmax(200px,2.4fr)_80px_120px_84px_56px_108px] @min-[1000px]:grid-cols-[28px_minmax(220px,2.4fr)_88px_120px_84px_96px_88px_72px_56px_108px] items-center gap-3";
+const WIDE = "hidden @min-[1000px]:block";
 
 function Duration({ r }: { r: RecItemProps["r"] }) {
   const d = useDuration(r);
@@ -43,9 +47,9 @@ export const RecRow = memo(function RecRow({ r, selected, onSelect, onEdit, onDe
       </span>
       <StatusPill r={r} />
       <Duration r={r} />
-      <span className="font-mono tabular text-fg-2">{recording ? rate(r.stats.speed_bps) : "—"}</span>
-      <span className="font-mono tabular text-fg-2">{recording ? bytes(r.stats.size_bytes) : "—"}</span>
-      <span className="font-mono text-fg-3">{(recording && resolution(r)) || qualityLabel(r.quality)}</span>
+      <span className={cx(WIDE, "font-mono tabular text-fg-2")}>{recording ? rate(r.stats.speed_bps) : "—"}</span>
+      <span className={cx(WIDE, "font-mono tabular text-fg-2")}>{recording ? bytes(r.stats.size_bytes) : "—"}</span>
+      <span className={cx(WIDE, "truncate font-mono text-fg-3")}>{(recording && resolution(r)) || qualityLabel(r.quality)}</span>
       <Switch checked={r.monitor} onChange={(v) => recActions.setMonitor(r, v)} label={`监控 ${r.name}`} />
       <div className="justify-self-end">
         <RecMenu r={r} onEdit={() => onEdit(r)} onDelete={() => onDelete(r)} />
@@ -62,9 +66,9 @@ export function RowHeader() {
       <span>平台</span>
       <span>状态</span>
       <span>时长</span>
-      <span>速度</span>
-      <span>大小</span>
-      <span>画质</span>
+      <span className={WIDE}>速度</span>
+      <span className={WIDE}>大小</span>
+      <span className={WIDE}>画质</span>
       <span>监控</span>
       <span />
     </div>

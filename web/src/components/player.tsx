@@ -1,9 +1,9 @@
-import { Download, FolderOpen } from "lucide-react";
+import { CircleAlert, Download, FolderOpen } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, fileUrl } from "@/lib/api";
 import { bytes } from "@/lib/format";
 import type { MediaFile } from "@/lib/types";
-import { Button, Dialog } from "./ui";
+import { Button, buttonClass, Dialog } from "./ui";
 
 const NATIVE = new Set(["mp4", "mov", "m4a", "mp3", "aac", "wav", "mkv"]);
 
@@ -62,8 +62,9 @@ export function PlayerDialog({ file, onClose }: { file: MediaFile | null; onClos
             <Button variant="ghost" icon={<FolderOpen className="size-3.5" />} onClick={() => api.revealFile(file.path)}>
               在文件夹中显示
             </Button>
-            <a href={fileUrl(file.path)} download={file.name}>
-              <Button icon={<Download className="size-3.5" />}>下载</Button>
+            <a href={fileUrl(file.path)} download={file.name} className={buttonClass("secondary")}>
+              <Download className="size-3.5" />
+              下载
             </a>
           </>
         )
@@ -75,7 +76,16 @@ export function PlayerDialog({ file, onClose }: { file: MediaFile | null; onClos
         ) : (
           <video ref={setEl} controls playsInline className="aspect-video max-h-[62vh] w-full bg-black" />
         )}
-        {error && <div className="absolute inset-x-0 bottom-14 text-center text-[13px] text-white/80">{error}</div>}
+        {error && (
+          // Covers the native controls too: the browser keeps spinning on a stream it can't decode.
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/80 px-6 text-center text-white backdrop-blur-sm">
+            <CircleAlert className="size-6 text-white/70" />
+            <div className="text-[13.5px] font-medium">{error}</div>
+            <div className="max-w-sm text-[12px] leading-relaxed text-white/60">
+              正在录制的文件要等录完才能完整播放；也可以点下方「在文件夹中显示」用本地播放器打开。
+            </div>
+          </div>
+        )}
       </div>
     </Dialog>
   );
