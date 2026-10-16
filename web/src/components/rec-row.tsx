@@ -2,7 +2,7 @@ import { memo } from "react";
 import { bytes, clock, rate, resolution, useDuration } from "@/lib/format";
 import { platformColor, platformName } from "@/lib/platforms";
 import { recActions, RecMenu } from "./rec-actions";
-import { Cover, qualityLabel, SelectBox, type RecItemProps } from "./rec-card";
+import { Cover, NotifyOnlyBadge, qualityLabel, RecordThisLiveButton, SelectBox, type RecItemProps } from "./rec-card";
 import { StatusPill } from "./status";
 import { cx, Switch } from "./ui";
 
@@ -37,8 +37,14 @@ export const RecRow = memo(function RecRow({ r, selected, onSelect, onEdit, onDe
           {recording && <span className="absolute top-1 left-1 size-1.5 rounded-full bg-rec animate-rec" />}
         </div>
         <div className="min-w-0">
-          <div className="truncate text-[13px] font-semibold">{r.name}</div>
-          <div className="truncate text-[12px] text-fg-3">{r.live_title || r.url.replace(/^https?:\/\/(www\.)?/, "")}</div>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-[13px] font-semibold">{r.name}</span>
+            {r.only_notify_no_record && <NotifyOnlyBadge recording={r.is_recording} />}
+          </div>
+          <div className="flex min-w-0 items-center gap-1">
+            <RecordThisLiveButton r={r} className="-ml-1.5" />
+            <span className="truncate text-[12px] text-fg-3">{r.live_title || r.url.replace(/^https?:\/\/(www\.)?/, "")}</span>
+          </div>
         </div>
       </div>
       <span className="inline-flex items-center gap-1.5 truncate text-fg-2">
@@ -49,7 +55,9 @@ export const RecRow = memo(function RecRow({ r, selected, onSelect, onEdit, onDe
       <Duration r={r} />
       <span className={cx(WIDE, "font-mono tabular text-fg-2")}>{recording ? rate(r.stats.speed_bps) : "—"}</span>
       <span className={cx(WIDE, "font-mono tabular text-fg-2")}>{recording ? bytes(r.stats.size_bytes) : "—"}</span>
-      <span className={cx(WIDE, "truncate font-mono text-fg-3")}>{(recording && resolution(r)) || qualityLabel(r.quality)}</span>
+      <span className={cx(WIDE, "truncate font-mono text-fg-3")}>
+        {r.only_notify_no_record && !recording ? "—" : (recording && resolution(r)) || qualityLabel(r.quality)}
+      </span>
       <Switch checked={r.monitor} onChange={(v) => recActions.setMonitor(r, v)} label={`监控 ${r.name}`} />
       <div className="justify-self-end">
         <RecMenu r={r} onEdit={() => onEdit(r)} onDelete={() => onDelete(r)} />

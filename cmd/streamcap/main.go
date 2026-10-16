@@ -32,6 +32,7 @@ import (
 	"github.com/AichiQiezi/streamcap-go/internal/api"
 	"github.com/AichiQiezi/streamcap-go/internal/desktop"
 	"github.com/AichiQiezi/streamcap-go/internal/monitor"
+	"github.com/AichiQiezi/streamcap-go/internal/notify"
 	_ "github.com/AichiQiezi/streamcap-go/internal/platform/bilibili"
 	_ "github.com/AichiQiezi/streamcap-go/internal/platform/douyin"
 	"github.com/AichiQiezi/streamcap-go/internal/recorder"
@@ -100,10 +101,15 @@ func main() {
 		slog.Warn("web UI not embedded: run `npm run build` in web/ before `go build`")
 	}
 
+	if !*headless {
+		notify.SystemNotifier = desktop.Notify
+	}
 	windowMode := !*browser && !*headless
 	app := &lifecycle{m: m, done: make(chan struct{}), window: windowMode}
 	srv := &http.Server{
-		Handler:           api.New(m, static, loopback, api.Hooks{Show: app.show(url), Quit: app.quit}),
+		Handler: api.New(m, static, loopback, api.Hooks{
+			Show: app.show(url), Quit: app.quit, OpenNotificationSettings: desktop.OpenNotificationSettings,
+		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	app.srv = srv

@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -13,10 +14,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/coder/websocket"
 
 	"github.com/AichiQiezi/streamcap-go/internal/monitor"
+	"github.com/AichiQiezi/streamcap-go/internal/notify"
 	"github.com/AichiQiezi/streamcap-go/internal/platform"
 	"github.com/AichiQiezi/streamcap-go/internal/store"
 	"github.com/AichiQiezi/streamcap-go/internal/sysutil"
@@ -26,6 +29,8 @@ import (
 type Hooks struct {
 	Show func() // bring the window to the front (another launch of the app asks for this)
 	Quit func() // graceful shutdown: stop recordings, save files, exit
+	// OpenNotificationSettings opens the OS page where StreamCap's notifications are allowed.
+	OpenNotificationSettings func() error
 }
 
 // Server bundles the handlers.
@@ -44,6 +49,7 @@ func New(m *monitor.Manager, static fs.FS, loopback bool, hooks Hooks) http.Hand
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("POST /api/recordings", s.add)
 	mux.HandleFunc("POST /api/recordings/batch", s.batch)
+	mux.HandleFunc("PUT /api/recordings/order", s.reorder)
 	mux.HandleFunc("PATCH /api/recordings/{id}", s.edit)
 	mux.HandleFunc("DELETE /api/recordings/{id}", s.remove)
 	mux.HandleFunc("POST /api/recordings/{id}/monitor", s.monitor)
@@ -54,6 +60,8 @@ func New(m *monitor.Manager, static fs.FS, loopback bool, hooks Hooks) http.Hand
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
 	mux.HandleFunc("PUT /api/cookies", s.putCookies)
+	mux.HandleFunc("POST /api/notify/test", s.testNotify)
+	mux.HandleFunc("POST /api/notify/system-settings", s.openNotificationSettings)
 	mux.HandleFunc("GET /api/files", s.listFiles)
 	mux.HandleFunc("GET /api/files/raw", s.rawFile)
 	mux.HandleFunc("DELETE /api/files", s.deleteFile)
@@ -286,6 +294,17 @@ func (s *Server) thumbnail(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, p)
 }
 
+func (s *Server) reorder(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	s.m.Reorder(body.IDs)
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
 // ---- settings ----------------------------------------------------------------------------------
 
 func (s *Server) getSettings(w http.ResponseWriter, _ *http.Request) {
@@ -314,6 +333,44 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.m.UpdateSettings(values)
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// testNotify sends a sample message through one channel. `values` are the settings page's unsaved
+// edits, so a channel can be tried before saving.
+func (s *Server) testNotify(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Channel string         `json:"channel"`
+		Values  map[string]any `json:"values"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	settings := s.m.Settings().Clone()
+	known := store.DefaultSettings()
+	for k, v := range in.Values {
+		if _, ok := known[k]; ok {
+			settings[k] = v
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 70*time.Second) // macOS may wait on the permission prompt
+	defer cancel()
+	if err := notify.Test(ctx, settings, in.Channel); err != nil {
+		fail(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) openNotificationSettings(w http.ResponseWriter, _ *http.Request) {
+	if s.hooks.OpenNotificationSettings == nil {
+		fail(w, http.StatusNotImplemented, "当前运行方式没有桌面")
+		return
+	}
+	if err := s.hooks.OpenNotificationSettings(); err != nil {
+		fail(w, http.StatusBadGateway, err.Error())
+		return
+	}
 	writeJSON(w, map[string]bool{"ok": true})
 }
 

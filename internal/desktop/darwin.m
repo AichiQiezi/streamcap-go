@@ -1,6 +1,7 @@
 //go:build darwin
 
 #import <Cocoa/Cocoa.h>
+#import <UserNotifications/UserNotifications.h>
 #import <objc/runtime.h>
 #include "darwin.h"
 
@@ -113,4 +114,87 @@ void sc_show(void) {
     } else {
         [NSApp activateIgnoringOtherApps:YES];
     }
+}
+
+// ---- notifications ---------------------------------------------------------------------------
+
+// Shows banners even while StreamCap is frontmost, and opens the live room when one is clicked.
+@interface SCNotifyDelegate : NSObject <UNUserNotificationCenterDelegate>
+@end
+
+@implementation SCNotifyDelegate
+- (void)userNotificationCenter:(UNUserNotificationCenter *)center
+       willPresentNotification:(UNNotification *)notification
+         withCompletionHandler:(void (^)(UNNotificationPresentationOptions))completionHandler {
+    if (@available(macOS 11.0, *)) {
+        completionHandler(UNNotificationPresentationOptionBanner | UNNotificationPresentationOptionList |
+                          UNNotificationPresentationOptionSound);
+    } else { // unreachable: Info.plist requires macOS 11
+        completionHandler(UNNotificationPresentationOptionSound);
+    }
+}
+
+- (void)userNotificationCenter:(UNUserNotificationCenter *)center
+    didReceiveNotificationResponse:(UNNotificationResponse *)response
+             withCompletionHandler:(void (^)(void))completionHandler {
+    NSString *url = response.notification.request.content.userInfo[@"url"];
+    if (url.length > 0) {
+        NSURL *u = [NSURL URLWithString:url];
+        if (u) [[NSWorkspace sharedWorkspace] openURL:u];
+    } else {
+        dispatch_async(dispatch_get_main_queue(), ^{ sc_show(); });
+    }
+    completionHandler();
+}
+@end
+
+static SCNotifyDelegate *scNotifyDelegate = nil;
+
+static char *dupError(NSString *msg) { return strdup(msg.UTF8String); }
+
+char *sc_notify(const char *title, const char *body, const char *url) {
+    // UNUserNotificationCenter throws outside an .app bundle (no bundle identifier).
+    if (NSBundle.mainBundle.bundleIdentifier == nil) {
+        return dupError(@"not running from an .app bundle");
+    }
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        scNotifyDelegate = [[SCNotifyDelegate alloc] init];
+        center.delegate = scNotifyDelegate;
+    });
+
+    __block NSString *failure = nil;
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    // Asks only the first time; afterwards it reports the user's choice from System Settings.
+    [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound)
+                          completionHandler:^(BOOL granted, NSError *error) {
+        if (!granted) {
+            failure = error ? error.localizedDescription : @"denied";
+        }
+        dispatch_semaphore_signal(done);
+    }];
+    if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_SEC)) != 0) {
+        return dupError(@"等待通知授权超时");
+    }
+    if (failure) {
+        return dupError([@"denied: " stringByAppendingString:failure]);
+    }
+
+    UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
+    content.title = [NSString stringWithUTF8String:title];
+    content.body = [NSString stringWithUTF8String:body];
+    content.sound = [UNNotificationSound defaultSound];
+    content.userInfo = @{@"url": [NSString stringWithUTF8String:url]};
+    UNNotificationRequest *req = [UNNotificationRequest requestWithIdentifier:[[NSUUID UUID] UUIDString]
+                                                                      content:content
+                                                                      trigger:nil];
+    [center addNotificationRequest:req withCompletionHandler:^(NSError *error) {
+        if (error) failure = error.localizedDescription;
+        dispatch_semaphore_signal(done);
+    }];
+    if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) != 0) {
+        return dupError(@"发送通知超时");
+    }
+    return failure ? dupError(failure) : NULL;
 }

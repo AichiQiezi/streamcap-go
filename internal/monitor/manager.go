@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,7 @@ const (
 	EventRemoved                  // rooms deleted (IDs set)
 	EventToast                    // a message for the user (Text set)
 	EventQuitting                 // graceful shutdown started
+	EventOrder                    // the room list was reordered (IDs: the new order)
 )
 
 // Event is delivered to subscribers. Handlers must not block.
@@ -61,6 +63,10 @@ type Manager struct {
 	subs     []func(Event)
 	sems     map[string]chan struct{} // per-platform resolve concurrency
 	semSize  int
+
+	// roomsMu serialises Add and Edit end to end. Both look a link up on the network between
+	// checking for duplicates and writing, and two adds of one streamer must not both pass the check.
+	roomsMu sync.Mutex
 
 	diskMu      sync.Mutex
 	diskAt      time.Time
@@ -334,26 +340,30 @@ var ErrNotFound = errors.New("直播间不存在")
 
 // Add creates rooms; monitored ones start right away.
 func (m *Manager) Add(inputs []RoomInput) ([]View, []Skip) {
+	m.roomsMu.Lock()
+	defer m.roomsMu.Unlock()
 	s := m.Settings()
-	existing := map[string]bool{}
-	for _, r := range m.roomsSnapshot() {
-		existing[normalizeURL(r.URL)] = true
-	}
+	seen := newRoomIndex(m.roomsSnapshot())
 	var created []store.Room
 	var skipped []Skip
 	for _, in := range inputs {
 		u := strings.TrimSpace(in.URL)
 		res := platform.Find(u)
-		switch {
-		case res == nil:
+		if res == nil {
 			skipped = append(skipped, Skip{u, "暂不支持该平台（目前支持抖音、B站）"})
 			continue
-		case existing[normalizeURL(u)]:
-			skipped = append(skipped, Skip{u, "已在列表中"})
+		}
+		c, err := m.canonical(res, u)
+		if err != nil {
+			skipped = append(skipped, Skip{u, err.Error()})
+			continue
+		}
+		if dup := seen.find(res.Key(), c, ""); dup != nil {
+			skipped = append(skipped, Skip{u, dupReason(dup)})
 			continue
 		}
 		room := store.Room{
-			ID: newID(), URL: u, Platform: res.Key(), Monitor: true, CreatedAt: time.Now(),
+			ID: newID(), URL: c.URL, Platform: res.Key(), Ident: c.Ident, Monitor: true, CreatedAt: time.Now(),
 			Quality:    platform.Quality(s.String("record_quality")),
 			Format:     strings.ToUpper(s.String("video_format")),
 			Segment:    s.Bool("segmented_recording_enabled"),
@@ -361,7 +371,7 @@ func (m *Manager) Add(inputs []RoomInput) ([]View, []Skip) {
 			NotifyOnly: s.Bool("only_notify_no_record"),
 		}
 		applyInput(&room, in)
-		existing[normalizeURL(u)] = true
+		seen.add(room)
 		created = append(created, room)
 	}
 	if len(created) == 0 {
@@ -384,7 +394,28 @@ func (m *Manager) Add(inputs []RoomInput) ([]View, []Skip) {
 
 // Edit updates a room's settings. Changes to quality/format/paths apply from the next recording part.
 func (m *Manager) Edit(id string, in RoomInput) (View, error) {
-	var err error
+	m.roomsMu.Lock()
+	defer m.roomsMu.Unlock()
+	var (
+		newURL string
+		c      platform.Canonical
+		res    platform.Resolver
+	)
+	if u := strings.TrimSpace(in.URL); u != "" {
+		if cur, ok := m.room(id); !ok || normalizeURL(cur.URL) != normalizeURL(u) {
+			if res = platform.Find(u); res == nil {
+				return View{}, errors.New("不支持的直播间链接")
+			}
+			var err error
+			if c, err = m.canonical(res, u); err != nil {
+				return View{}, err
+			}
+			if dup := newRoomIndex(m.roomsSnapshot()).find(res.Key(), c, id); dup != nil {
+				return View{}, errors.New(dupReason(dup))
+			}
+			newURL = c.URL
+		}
+	}
 	found := false
 	m.st.Rooms.Update(func(rs *[]store.Room) {
 		for i := range *rs {
@@ -393,13 +424,8 @@ func (m *Manager) Edit(id string, in RoomInput) (View, error) {
 			}
 			found = true
 			r := &(*rs)[i]
-			if u := strings.TrimSpace(in.URL); u != "" && u != r.URL {
-				res := platform.Find(u)
-				if res == nil {
-					err = errors.New("不支持的直播间链接")
-					return
-				}
-				r.URL, r.Platform = u, res.Key()
+			if newURL != "" {
+				r.URL, r.Platform, r.Ident = newURL, res.Key(), c.Ident
 			}
 			in.Monitor = nil // monitoring has its own endpoint
 			applyInput(r, in)
@@ -409,12 +435,37 @@ func (m *Manager) Edit(id string, in RoomInput) (View, error) {
 	if !found {
 		return View{}, ErrNotFound
 	}
-	if err != nil {
-		return View{}, err
-	}
 	m.emit(Event{Type: EventRoom, ID: id})
 	v, _ := m.View(id)
 	return v, nil
+}
+
+// Reorder sets the room list's order, which the UI shows by default. ids is the new order; rooms it
+// leaves out keep their relative order after the listed ones, and unknown ids are ignored.
+func (m *Manager) Reorder(ids []string) {
+	pos := make(map[string]int, len(ids))
+	for i, id := range ids {
+		if _, dup := pos[id]; !dup {
+			pos[id] = i
+		}
+	}
+	var order []string
+	m.st.Rooms.Update(func(rs *[]store.Room) {
+		sort.SliceStable(*rs, func(i, j int) bool {
+			pi, iok := pos[(*rs)[i].ID]
+			pj, jok := pos[(*rs)[j].ID]
+			switch {
+			case iok && jok:
+				return pi < pj
+			default:
+				return iok && !jok
+			}
+		})
+		for _, r := range *rs {
+			order = append(order, r.ID)
+		}
+	})
+	m.emit(Event{Type: EventOrder, IDs: order})
 }
 
 // Delete stops and removes rooms (recorded files are kept).
@@ -477,13 +528,15 @@ func (m *Manager) SetRecording(id string, on bool) (View, error) {
 	if !ok {
 		return View{}, ErrNotFound
 	}
+	if on && !r.Monitor {
+		if _, err := m.SetMonitor(id, true); err != nil {
+			return View{}, err
+		}
+	}
 	rt := m.runtimeOf(id)
 	if on {
-		if !r.Monitor {
-			return m.SetMonitor(id, true)
-		}
 		if rt != nil {
-			rt.resumeRecording()
+			rt.resumeRecording() // for a notify-only room: this live only
 		}
 	} else if rt != nil {
 		rt.pauseRecording()
@@ -535,22 +588,36 @@ func (m *Manager) wakeAll() {
 }
 
 // renameIfAuto stores the detected streamer name unless the user set one.
-func (m *Manager) renameIfAuto(id, anchor string) {
-	if anchor == "" {
-		return
-	}
-	changed := false
-	m.st.Rooms.Update(func(rs *[]store.Room) {
-		for i := range *rs {
-			r := &(*rs)[i]
-			if r.ID == id && !r.CustomName && r.Name != anchor {
-				r.Name, changed = anchor, true
+// learn records what a successful check revealed: the streamer's name (unless the user typed one)
+// and their identity, for rooms added before identities were stored or while the site was down.
+// Runs after every check, so it only writes when something actually changed.
+func (m *Manager) learn(id, anchor, ident string) {
+	stale := false
+	m.st.Rooms.Read(func(rs []store.Room) {
+		for _, r := range rs {
+			if r.ID == id {
+				stale = (anchor != "" && !r.CustomName && r.Name != anchor) || (ident != "" && r.Ident == "")
 			}
 		}
 	})
-	if changed {
-		m.emit(Event{Type: EventRoom, ID: id})
+	if !stale {
+		return
 	}
+	m.st.Rooms.Update(func(rs *[]store.Room) {
+		for i := range *rs {
+			r := &(*rs)[i]
+			if r.ID != id {
+				continue
+			}
+			if anchor != "" && !r.CustomName {
+				r.Name = anchor
+			}
+			if ident != "" && r.Ident == "" {
+				r.Ident = ident
+			}
+		}
+	})
+	m.emit(Event{Type: EventRoom, ID: id})
 }
 
 // resolve calls the site with per-platform concurrency limits and a hard timeout.
@@ -576,6 +643,71 @@ func (m *Manager) resolve(ctx context.Context, room store.Room) (*platform.Strea
 		Proxy:     m.proxyFor(room.Platform, s),
 	}
 	return res.Resolve(ctx, room.URL, opt)
+}
+
+// canonical asks the site for the link's stored form and the streamer's identity. Only a definite
+// "this link can't be a room" rejects the link; a network failure keeps it as typed (identity
+// unknown until the first successful check fills it in).
+func (m *Manager) canonical(res platform.Resolver, u string) (platform.Canonical, error) {
+	cz, ok := res.(platform.Canonicalizer)
+	if !ok {
+		return platform.Canonical{URL: u}, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	s := m.Settings()
+	c, err := cz.Canonical(ctx, u, platform.Options{Cookie: m.Cookies()[res.Key()], Proxy: m.proxyFor(res.Key(), s)})
+	var ue *platform.UnsupportedError
+	switch {
+	case err == nil:
+		return c, nil
+	case errors.As(err, &ue):
+		return platform.Canonical{}, ue
+	default:
+		slog.Warn("link not verified, keeping it as typed", "url", u, "err", err)
+		return platform.Canonical{URL: u}, nil
+	}
+}
+
+// roomIndex finds an existing room by link or by streamer.
+type roomIndex struct {
+	byURL   map[string]store.Room
+	byIdent map[string]store.Room
+}
+
+func newRoomIndex(rooms []store.Room) *roomIndex {
+	ix := &roomIndex{byURL: map[string]store.Room{}, byIdent: map[string]store.Room{}}
+	for _, r := range rooms {
+		ix.add(r)
+	}
+	return ix
+}
+
+func (ix *roomIndex) add(r store.Room) {
+	ix.byURL[normalizeURL(r.URL)] = r
+	if r.Ident != "" {
+		ix.byIdent[r.Platform+":"+r.Ident] = r
+	}
+}
+
+// find returns another room (not self) with the same link or the same streamer.
+func (ix *roomIndex) find(platformKey string, c platform.Canonical, self string) *store.Room {
+	if r, ok := ix.byURL[normalizeURL(c.URL)]; ok && r.ID != self {
+		return &r
+	}
+	if c.Ident != "" {
+		if r, ok := ix.byIdent[platformKey+":"+c.Ident]; ok && r.ID != self {
+			return &r
+		}
+	}
+	return nil
+}
+
+func dupReason(r *store.Room) string {
+	if r.Name != "" {
+		return fmt.Sprintf("已在列表中（「%s」）", r.Name)
+	}
+	return "已在列表中"
 }
 
 func (m *Manager) proxyFor(platformKey string, s store.Settings) string {
@@ -663,12 +795,20 @@ func applyInput(r *store.Room, in RoomInput) {
 	}
 }
 
+// normalizeURL is the duplicate-check form of a link. Only scheme and host are case-insensitive:
+// short-link codes (v.douyin.com/qwpVijrUc3E, b23.tv/5piv15g) are not.
 func normalizeURL(u string) string {
 	u = strings.TrimSpace(u)
 	if i := strings.IndexAny(u, "?#"); i >= 0 {
 		u = u[:i]
 	}
-	return strings.TrimRight(strings.ToLower(u), "/")
+	u = strings.TrimRight(u, "/")
+	scheme, rest, ok := strings.Cut(u, "://")
+	if !ok {
+		scheme, rest = "https", u
+	}
+	host, path, _ := strings.Cut(rest, "/")
+	return strings.ToLower(scheme) + "://" + strings.ToLower(host) + "/" + path
 }
 
 func newID() string {

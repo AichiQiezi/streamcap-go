@@ -1,4 +1,4 @@
-import { ChevronDown, CircleAlert, Eye, EyeOff, Monitor, Moon, Sun } from "lucide-react";
+import { ChevronDown, CircleAlert, Eye, EyeOff, Monitor, Moon, Send, Sun } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button, cx, Field, Input, Segmented, Select, Switch } from "@/components/ui";
@@ -31,13 +31,27 @@ interface Section {
 }
 
 interface Channel {
-  id: string;
+  id: string; // matches the backend's channel id (POST /api/notify/test)
   name: string;
   enable: string;
   items: Item[];
+  hint?: string;
 }
 
 const CHANNELS: Channel[] = [
+  {
+    id: "system", name: "系统通知", enable: "system_notify_enabled", items: [],
+    hint: "弹出电脑的系统通知，点一下打开直播间。macOS 第一次会询问是否允许通知；没弹出的话到「系统设置 → 通知 → StreamCap」里打开。",
+  },
+  {
+    id: "qqbot", name: "QQ 机器人", enable: "qqbot_enabled",
+    hint: "用 QQ 开放平台（q.qq.com）的机器人给你发私聊。接收人要先给机器人发过一条消息，才能拿到 OpenID。官方对主动消息有条数限制，关注的主播很多时可能收不全。",
+    items: [
+      { key: "qqbot_app_id", label: "AppID", kind: "text", mono: true, width: "w-[200px]" },
+      { key: "qqbot_secret", label: "AppSecret", kind: "secret", mono: true },
+      { key: "qqbot_openid", label: "接收人 OpenID", kind: "text", mono: true, width: "w-[320px]", hint: "这个机器人下的用户 OpenID；多个用英文逗号分隔" },
+    ],
+  },
   { id: "dingtalk", name: "钉钉", enable: "dingtalk_enabled", items: [
     { key: "dingtalk_webhook_url", label: "Webhook 地址", kind: "secret", mono: true },
     { key: "dingtalk_at_objects", label: "@ 的手机号", kind: "text", placeholder: "多个用英文逗号分隔" },
@@ -86,7 +100,11 @@ function sections(qualities: { value: string; label: string }[], formats: string
         { key: "live_save_path", label: "保存目录", kind: "text", mono: true, width: "w-[360px]", hint: "所有录像的根目录；留空使用输入框里显示的默认目录" },
         { key: "record_quality", label: "默认画质", kind: "segmented", options: qualities, hint: "新添加直播间时的默认值" },
         { key: "video_format", label: "默认格式", kind: "select", options: formats.map((f) => ({ value: f, label: f })) },
-        { key: "loop_time_seconds", label: "开播检测间隔", kind: "number", suffix: "秒", hint: "太短可能被平台限流，建议不低于 60 秒" },
+        { key: "loop_time_seconds", label: "开播检测间隔", kind: "number", suffix: "秒", hint: "每个直播间多久查一次是否开播（最短 20 秒）。主播不多时 30 秒就够及时；关注得多、或频繁检测失败时调长一些，避免被平台限流" },
+        {
+          key: "resume_wait_minutes", label: "续播等待时间", kind: "number", suffix: "分钟",
+          hint: "主播下播后这段时间内又开播，算作同一场：接着录进同一个文件、不重复提醒、「录这一场」继续有效。代价是下播提醒和文件保存会晚这么久；填 0 表示一下播就结束这一场",
+        },
         { key: "platform_max_concurrent", label: "同平台并发检测数", kind: "number", hint: "同一平台同时检测的直播间数量上限" },
         { key: "segmented_recording_enabled", label: "分段录制", kind: "switch", hint: "按时长切分文件" },
         { key: "video_segment_time", label: "分段时长", kind: "number", suffix: "秒", when: (v) => Boolean(v.segmented_recording_enabled) },
@@ -127,14 +145,13 @@ function sections(qualities: { value: string; label: string }[], formats: string
     },
     {
       id: "notify",
-      title: "开播通知",
-      desc: "在下方配置推送渠道；单个直播间还需在编辑里打开「开播消息推送」",
+      title: "开播提醒",
+      desc: "设为「仅开播提醒」的直播间，以及打开了「开播时也提醒我」的录制直播间，开播时会发到下方所有启用的推送渠道",
       items: [
-        { key: "stream_start_notification_enabled", label: "开播时推送", kind: "switch" },
-        { key: "stream_end_notification_enabled", label: "下播时推送", kind: "switch" },
-        { key: "only_notify_no_record", label: "新直播间默认仅通知不录制", kind: "switch" },
+        { key: "only_notify_no_record", label: "新直播间默认「仅开播提醒」", kind: "switch", hint: "添加直播间时默认只提醒、不录制" },
+        { key: "stream_end_notification_enabled", label: "下播时也提醒", kind: "switch" },
         { key: "custom_notification_title", label: "自定义标题", kind: "text", placeholder: "留空使用默认", width: "w-[300px]" },
-        { key: "custom_stream_start_content", label: "开播内容", kind: "text", placeholder: "留空使用默认", width: "w-[300px]" },
+        { key: "custom_stream_start_content", label: "开播内容", kind: "text", placeholder: "留空使用默认", width: "w-[300px]", hint: "可用 {anchor} 主播、{title} 标题、{url} 链接、{time} 时间" },
         { key: "custom_stream_end_content", label: "下播内容", kind: "text", placeholder: "留空使用默认", width: "w-[300px]" },
       ],
     },
@@ -253,6 +270,7 @@ export function SettingsPage() {
   const [defaultPath, setDefaultPath] = useState("");
   const [saving, setSaving] = useState(false);
   const [openChannel, setOpenChannel] = useState<string | null>(null);
+  const [testing, setTesting] = useState<string | null>(null);
   const [active, setActive] = useState("appearance");
   const [loadError, setLoadError] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -281,6 +299,33 @@ export function SettingsPage() {
 
   const enabledChannels = CHANNELS.filter((c) => Boolean(draft[c.enable])).length;
   const set = (k: string, v: string | boolean) => setDraft((d) => ({ ...d, [k]: v }));
+
+  // Sends with the unsaved edits, so a channel can be checked before saving.
+  async function testChannel(c: Channel) {
+    setTesting(c.id);
+    try {
+      await api.testNotify(c.id, Object.fromEntries(changed.map((k) => [k, draft[k]])));
+      toast.success(`已通过「${c.name}」发送测试消息`, {
+        description: c.id === "system" ? "看看屏幕右上角" : "去对应的 App 看看有没有收到",
+      });
+    } catch (e) {
+      toast.error(`「${c.name}」发送失败`, {
+        description: (e as Error).message,
+        duration: 10000,
+        action: c.id === "system" ? { label: "打开系统设置", onClick: openSystemSettings } : undefined,
+      });
+    } finally {
+      setTesting(null);
+    }
+  }
+
+  async function openSystemSettings() {
+    try {
+      await api.openNotificationSettings();
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
 
   async function save() {
     setSaving(true);
@@ -383,7 +428,7 @@ export function SettingsPage() {
         <section id="channels" className="scroll-mt-6">
           <h2 className="text-[15px] font-semibold tracking-[-0.01em]">推送渠道</h2>
           <p className="mt-1 text-[12.5px] text-fg-3">
-            开播 / 下播通知会发到所有已启用的渠道
+            开播 / 下播提醒会发到所有启用的渠道
             {enabledChannels > 0 && <span className="text-fg-2">，当前已启用 {enabledChannels} 个</span>}
           </p>
           <div className="mt-3 divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
@@ -412,6 +457,24 @@ export function SettingsPage() {
                           <Control item={it} value={draft[it.key]} onChange={(v) => set(it.key, v)} />
                         </Field>
                       ))}
+                      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-2.5">
+                        <p className="min-w-[200px] flex-1 text-[12px] leading-relaxed text-fg-3">
+                          {c.hint ?? "发送一条测试消息，确认配置正确。"}
+                        </p>
+                        {c.id === "system" && (
+                          <Button size="sm" variant="ghost" onClick={openSystemSettings}>
+                            打开系统通知设置
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          icon={<Send className="size-3.5" />}
+                          loading={testing === c.id}
+                          onClick={() => testChannel(c)}
+                        >
+                          发送测试
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>

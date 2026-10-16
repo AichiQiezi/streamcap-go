@@ -3,6 +3,10 @@
 
 // Package bilibili resolves Bilibili (B站) live rooms (https://live.bilibili.com/<room_id>).
 //
+// Also accepted, as the phone app shares them: b23.tv short links (分享 → 复制链接; they 302 to the
+// room or profile) and profile pages (space.bilibili.com/<uid>, m.bilibili.com/space/<uid>), which
+// map to the user's room through getRoomInfoOld. Canonical turns both into the room URL at add time.
+//
 // Flow: room_init (short id -> real room id, live status) -> getH5InfoByRoom (title, anchor name)
 // -> getRoomPlayInfo v2 (FLV + HLS pull URLs, codec, actual qn), only when the room is live.
 //
@@ -24,6 +28,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AichiQiezi/streamcap-go/internal/platform"
@@ -46,7 +51,16 @@ func init() { platform.Register(&Resolver{}) }
 type Resolver struct {
 	// apiBase overrides https://api.live.bilibili.com (tests only).
 	apiBase string
+	// shortBase, when set, replaces the scheme+host of short links (tests only).
+	shortBase string
+
+	// Both mappings are permanent, so a room added by a share link costs the lookup once.
+	expanded sync.Map // short link -> URL it redirects to
+	rooms    sync.Map // uid -> room id
 }
+
+// shortHosts are the hosts of the app's share links: b23.tv and its mirrors.
+var shortHosts = map[string]bool{"b23.tv": true, "bili2233.cn": true, "bili22.cn": true, "bili33.cn": true}
 
 func (r *Resolver) Key() string  { return "bilibili" }
 func (r *Resolver) Name() string { return "B站" }
@@ -59,7 +73,133 @@ func (r *Resolver) Match(raw string) bool {
 		return false
 	}
 	h := u.Hostname()
-	return h == "bilibili.com" || strings.HasSuffix(h, ".bilibili.com")
+	return h == "bilibili.com" || strings.HasSuffix(h, ".bilibili.com") || shortHosts[h]
+}
+
+// Canonical implements platform.Canonicalizer: share and profile links become the room URL, keyed by
+// the real room id (live.bilibili.com/6 and /7734200 are the same room).
+func (r *Resolver) Canonical(ctx context.Context, raw string, opt platform.Options) (platform.Canonical, error) {
+	c := r.caller(opt)
+	id, err := r.roomID(ctx, c, raw)
+	if err != nil {
+		return platform.Canonical{}, err
+	}
+	data, err := c.get(ctx, "/room/v1/Room/room_init", url.Values{"id": {id}})
+	if err != nil {
+		var ae *APIError
+		if errors.As(err, &ae) && ae.Code == 60004 {
+			return platform.Canonical{}, &platform.UnsupportedError{Reason: "这个 B站直播间不存在"}
+		}
+		return platform.Canonical{}, err
+	}
+	ri, err := parseRoomInit(data)
+	if err != nil {
+		return platform.Canonical{}, err
+	}
+	real := strconv.FormatInt(ri.RoomID, 10)
+	return platform.Canonical{URL: liveOrigin + "/" + real, Ident: real}, nil
+}
+
+func (r *Resolver) caller(opt platform.Options) *caller {
+	c := &caller{base: r.apiBase, client: platform.HTTPClient(opt.Proxy), cookie: opt.Cookie}
+	if c.base == "" {
+		c.base = defaultAPIBase
+	}
+	return c
+}
+
+// roomID finds the (possibly short) room id behind any accepted link.
+func (r *Resolver) roomID(ctx context.Context, c *caller, raw string) (string, error) {
+	u, err := parseURL(raw)
+	if err != nil {
+		return "", fmt.Errorf("%w: %s", platform.ErrUnsupported, raw)
+	}
+	if shortHosts[u.Hostname()] {
+		if raw, err = r.expand(ctx, c.client, u); err != nil {
+			return "", err
+		}
+		if u, err = parseURL(raw); err != nil {
+			return "", fmt.Errorf("%w: %s", platform.ErrUnsupported, raw)
+		}
+	}
+	if uid := spaceUID(u); uid != "" {
+		return r.roomForUID(ctx, c, uid)
+	}
+	id, err := parseRoomID(raw)
+	if err != nil {
+		return "", &platform.UnsupportedError{Reason: "不是 B站直播间或个人主页的链接"}
+	}
+	return id, nil
+}
+
+// expand reads where a short link points. Only the first redirect is needed: it already names the
+// room or profile, and following on would download the whole web page.
+func (r *Resolver) expand(ctx context.Context, client *http.Client, short *url.URL) (string, error) {
+	key := short.Hostname() + short.EscapedPath()
+	if v, ok := r.expanded.Load(key); ok {
+		return v.(string), nil
+	}
+	target := "https://" + short.Host + short.EscapedPath()
+	if r.shortBase != "" {
+		target = r.shortBase + short.EscapedPath()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", desktopUA)
+	noFollow := *client
+	noFollow.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := noFollow.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("bilibili short link: %w", err)
+	}
+	resp.Body.Close()
+	loc := resp.Header.Get("Location")
+	if resp.StatusCode/100 != 3 || loc == "" {
+		// An unknown code answers 200 with a "link not found" page.
+		return "", &platform.UnsupportedError{Reason: "B站短链接无效或已失效"}
+	}
+	r.expanded.Store(key, loc)
+	return loc, nil
+}
+
+// spaceUID returns the uid of a profile page URL, or "".
+func spaceUID(u *url.URL) string {
+	segs := strings.FieldsFunc(u.Path, func(c rune) bool { return c == '/' })
+	var id string
+	switch {
+	case u.Hostname() == "space.bilibili.com" && len(segs) >= 1:
+		id = segs[0]
+	case u.Hostname() == "m.bilibili.com" && len(segs) >= 2 && segs[0] == "space":
+		id = segs[1]
+	}
+	if n, err := strconv.ParseInt(id, 10, 64); err != nil || n <= 0 {
+		return ""
+	}
+	return id
+}
+
+func (r *Resolver) roomForUID(ctx context.Context, c *caller, uid string) (string, error) {
+	if v, ok := r.rooms.Load(uid); ok {
+		return v.(string), nil
+	}
+	data, err := c.get(ctx, "/room/v1/Room/getRoomInfoOld", url.Values{"mid": {uid}})
+	if err != nil {
+		return "", err
+	}
+	var d struct {
+		RoomID int64 `json:"roomid"`
+	}
+	if err := json.Unmarshal(data, &d); err != nil {
+		return "", fmt.Errorf("bilibili getRoomInfoOld: %w", err)
+	}
+	if d.RoomID <= 0 {
+		return "", &platform.UnsupportedError{Reason: "这个 B站用户还没有开通直播间"}
+	}
+	id := strconv.FormatInt(d.RoomID, 10)
+	r.rooms.Store(uid, id)
+	return id, nil
 }
 
 // APIError is a non-zero "code" in a Bilibili API response, e.g. -352 / -412 (risk control) or
@@ -76,13 +216,10 @@ func (e *APIError) Error() string {
 
 // Resolve implements platform.Resolver.
 func (r *Resolver) Resolve(ctx context.Context, roomURL string, opt platform.Options) (*platform.StreamInfo, error) {
-	id, err := parseRoomID(roomURL)
+	c := r.caller(opt)
+	id, err := r.roomID(ctx, c, roomURL)
 	if err != nil {
 		return nil, err
-	}
-	c := &caller{base: r.apiBase, client: platform.HTTPClient(opt.Proxy), cookie: opt.Cookie}
-	if c.base == "" {
-		c.base = defaultAPIBase
 	}
 
 	initData, err := c.get(ctx, "/room/v1/Room/room_init", url.Values{"id": {id}})
@@ -98,6 +235,7 @@ func (r *Resolver) Resolve(ctx context.Context, roomURL string, opt platform.Opt
 		RoomURL:  roomURL,
 		RoomID:   strconv.FormatInt(ri.RoomID, 10),
 	}
+	info.Ident = info.RoomID
 	live := ri.LiveStatus == 1 // 0 = offline, 2 = 轮播 (replaying VODs) — not a live broadcast
 
 	h5Data, err := c.get(ctx, "/xlive/web-room/v1/index/getH5InfoByRoom", url.Values{"room_id": {info.RoomID}})

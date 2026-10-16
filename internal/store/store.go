@@ -19,10 +19,11 @@ const flushGap = 500 * time.Millisecond
 
 // File is one JSON document on disk guarded by a mutex.
 type File[T any] struct {
-	path  string
-	mu    sync.RWMutex
-	data  T
-	dirty chan struct{}
+	path    string
+	mu      sync.RWMutex
+	data    T
+	dirty   chan struct{}
+	flushMu sync.Mutex // one writer of path.tmp at a time: the flusher and FlushAll on shutdown
 }
 
 func openFile[T any](path string, def T) (*File[T], error) {
@@ -81,6 +82,8 @@ func (f *File[T]) flusher() {
 
 // Flush writes the current data to disk now.
 func (f *File[T]) Flush() error {
+	f.flushMu.Lock()
+	defer f.flushMu.Unlock()
 	f.mu.RLock()
 	raw, err := json.MarshalIndent(f.data, "", "  ")
 	f.mu.RUnlock()
@@ -91,10 +94,28 @@ func (f *File[T]) Flush() error {
 		return err
 	}
 	tmp := f.path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
+	if err := writeSynced(tmp, raw); err != nil {
 		return err
 	}
 	return os.Rename(tmp, f.path)
+}
+
+// writeSynced writes and fsyncs before the caller renames it into place. Without the fsync, a power
+// cut after the rename can leave the real file empty (the rename reached disk, the data didn't).
+func writeSynced(path string, data []byte) error {
+	fh, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := fh.Write(data); err != nil {
+		fh.Close()
+		return err
+	}
+	if err := fh.Sync(); err != nil {
+		fh.Close()
+		return err
+	}
+	return fh.Close()
 }
 
 // Store is the app's persistent state.

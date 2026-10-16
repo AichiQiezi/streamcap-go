@@ -31,6 +31,10 @@ type Room struct {
 	Push          bool      `json:"push"`
 	NotifyOnly    bool      `json:"notify_only"`
 	CreatedAt     time.Time `json:"created_at"`
+
+	// Ident is the streamer's id on the site (platform.StreamInfo.Ident), to refuse adding the same
+	// streamer twice through different links. Filled at add time, or by the first successful check.
+	Ident string `json:"ident,omitempty"`
 }
 
 // SessionJournal records a live session until its files are merged/remuxed, so a crash or kill
@@ -95,6 +99,7 @@ func DefaultSettings() Settings {
 		"record_quality":              "OD",
 		"video_format":                "TS",
 		"loop_time_seconds":           "120",
+		"resume_wait_minutes":         "10",
 		"platform_max_concurrent":     "2",
 		"segmented_recording_enabled": false,
 		"video_segment_time":          "1800",
@@ -119,6 +124,11 @@ func DefaultSettings() Settings {
 		"custom_notification_title":         "",
 		"custom_stream_start_content":       "",
 		"custom_stream_end_content":         "",
+		"system_notify_enabled":             true,
+		"qqbot_enabled":                     false,
+		"qqbot_app_id":                      "",
+		"qqbot_secret":                      "",
+		"qqbot_openid":                      "",
 		"dingtalk_enabled":                  false,
 		"dingtalk_webhook_url":              "",
 		"dingtalk_at_objects":               "",

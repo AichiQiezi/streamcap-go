@@ -51,6 +51,8 @@ func (h *hub) onEvent(ev monitor.Event) {
 		h.broadcast("toast", map[string]string{"text": ev.Text})
 	case monitor.EventQuitting:
 		h.broadcast("quitting", map[string]any{})
+	case monitor.EventOrder:
+		h.broadcast("order", ev.IDs)
 	}
 }
 

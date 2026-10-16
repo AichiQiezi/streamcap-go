@@ -1,4 +1,5 @@
 import {
+  CircleDot,
   CircleStop,
   Copy,
   ExternalLink,
@@ -33,7 +34,13 @@ export const recActions = {
   check: (r: Rec) => run(api.check(r.id), "正在检测直播状态…"),
   openFolder: (r: Rec) => run(api.openFolder(r.id)),
   stopRecording: async (r: Rec) => {
-    const res = await run(api.record(r.id, false), "已停止本次录制，下次检测到开播会继续录");
+    const ok = r.only_notify_no_record ? "已停止录制，继续只提醒" : "已停止本次录制，下次检测到开播会继续录";
+    const res = await run(api.record(r.id, false), ok);
+    if (res) useStore.getState().upsert(res);
+  },
+  /** Notify-only rooms: record the current live only; the room stays notify-only. */
+  recordThisLive: async (r: Rec) => {
+    const res = await run(api.record(r.id, true), `开始录制「${r.name}」这一场，下播后恢复只提醒`);
     if (res) useStore.getState().upsert(res);
   },
   startRecording: async (r: Rec) => {
@@ -68,6 +75,10 @@ export function RecMenu({ r, onEdit, onDelete }: { r: Rec; onEdit: () => void; o
           {r.is_recording ? (
             <MenuItem icon={<CircleStop />} onSelect={() => recActions.stopRecording(r)}>
               停止本次录制
+            </MenuItem>
+          ) : r.only_notify_no_record ? (
+            <MenuItem icon={<CircleDot />} onSelect={() => recActions.recordThisLive(r)} disabled={r.state !== "live"}>
+              {r.state === "live" ? "录这一场" : "录这一场（开播后可用）"}
             </MenuItem>
           ) : (
             <MenuItem icon={<Play />} onSelect={() => recActions.startRecording(r)} disabled={r.state === "checking"}>

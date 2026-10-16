@@ -39,6 +39,7 @@ const (
 	DetailRecordError  = "RECORD_ERROR"
 	DetailNoSpace      = "NO_SPACE"
 	DetailNotifyOnly   = "NOTIFY_ONLY"
+	DetailResumeWait   = "RESUME_WAIT" // off air, waiting to see if the streamer comes back
 	DetailRecordPaused = "RECORD_PAUSED"
 )
 
@@ -50,6 +51,16 @@ var (
 	// sessionGrace: if a session has had no working part for this long, end it even without
 	// confirmations (e.g. the site keeps erroring).
 	sessionGrace = 5 * time.Minute
+	// confirmStep: the n-th confirmation of "not live" waits n*confirmStep (5s, 10s).
+	confirmStep = 5 * time.Second
+	// intervalFloor is the shortest check interval settings may ask for; intervalUnit is the unit
+	// of loop_time_seconds (tests shrink both).
+	intervalFloor = 20 * time.Second
+	intervalUnit  = time.Second
+	// resumeUnit is the unit of the resume_wait_minutes setting (tests shrink it).
+	resumeUnit = time.Minute
+	// sendAlert pushes 开播/下播 messages (tests count them instead).
+	sendAlert = notify.Send
 	// handoffLead: switch to a freshly resolved URL this long before the current one expires.
 	handoffLead = 60 * time.Second
 	thumbEvery  = 30 * time.Second
@@ -102,7 +113,6 @@ type session struct {
 	lastAlive time.Time // last time a part was writing data
 	anchor    string
 	title     string
-	notified  bool
 	key       string // journal key (crash recovery)
 }
 
@@ -126,8 +136,35 @@ type runtime struct {
 	wake         chan struct{}
 	stopRec      chan struct{}
 	recordPaused bool // user stopped this live's recording; cleared when the live ends
-	liveNotified bool // notify-only rooms: start pushed for the current live
+	recordOnce   bool // user asked to record this live of a notify-only room; cleared when it ends
+
+	// watch is the broadcast the room is in, from the first check that saw it live until it is over
+	// (only touched by the loop).
+	watch *liveWatch
+	// endingAt is set once the platform has confirmed "off air": the 场 is closed at that time unless
+	// the streamer comes back first (only touched by the loop).
+	endingAt time.Time
 }
+
+// liveWatch is one broadcast. Alerts hang off it rather than off recording sessions: within one
+// live, recording can start and stop (录这一场, 停止本次录制, a mode switch) without announcing the
+// start again or the end early.
+type liveWatch struct {
+	since     time.Time
+	lastLive  time.Time // last check that saw it live: the end, for the 下播 alert's duration
+	anchor    string
+	announced bool          // the 开播 alert went out; the 下播 alert pairs with it
+	recorded  time.Duration // recorded across this live's sessions
+}
+
+// resumeWait is how long a confirmed "off air" may last and still count as the same 场.
+func resumeWait(s store.Settings) time.Duration {
+	return time.Duration(clampInt(s.Int("resume_wait_minutes", 10), 0, 120)) * resumeUnit
+}
+
+// alerts reports whether the room wants 开播/下播 messages: its own switch, or notify-only mode,
+// which exists for nothing else.
+func alerts(room store.Room) bool { return room.Push || room.NotifyOnly }
 
 func newRuntime(m *Manager, id string) *runtime {
 	rt := &runtime{m: m, id: id, wake: make(chan struct{}, 1), stopRec: make(chan struct{}, 1)}
@@ -185,7 +222,7 @@ func (rt *runtime) poke() {
 
 func (rt *runtime) pauseRecording() {
 	rt.ctlMu.Lock()
-	rt.recordPaused = true
+	rt.recordPaused, rt.recordOnce = true, false
 	rt.ctlMu.Unlock()
 	select {
 	case rt.stopRec <- struct{}{}:
@@ -193,11 +230,19 @@ func (rt *runtime) pauseRecording() {
 	}
 }
 
+// resumeRecording (re)starts recording this live. For a notify-only room that means this live only:
+// the room stays notify-only, and recordOnce is dropped when the live ends.
 func (rt *runtime) resumeRecording() {
 	rt.ctlMu.Lock()
-	rt.recordPaused = false
+	rt.recordPaused, rt.recordOnce = false, true
 	rt.ctlMu.Unlock()
 	rt.poke()
+}
+
+func (rt *runtime) isRecordOnce() bool {
+	rt.ctlMu.Lock()
+	defer rt.ctlMu.Unlock()
+	return rt.recordOnce
 }
 
 func (rt *runtime) isRecordPaused() bool {
@@ -262,16 +307,18 @@ func (rt *runtime) loop(ctx context.Context, done chan struct{}) {
 			return
 		}
 		s := rt.m.Settings()
-		interval := time.Duration(clampInt(s.Int("loop_time_seconds", 120), 20, 3600)) * time.Second
+		interval := max(time.Duration(clampInt(s.Int("loop_time_seconds", 120), 1, 3600))*intervalUnit, intervalFloor)
 
 		if !room.InSchedule(time.Now()) {
-			rt.endSession("超出定时监控时段")
+			rt.closeSession("超出定时监控时段")
 			rt.update(func(st *State) { st.Phase, st.IsLive, st.Detail = PhaseScheduled, false, "" })
 			rt.sleep(ctx, time.Minute)
 			continue
 		}
 
-		if rt.sess == nil && rt.snapshot().Phase != PhaseLive {
+		// Only the first check shows 检测中. Re-checks keep the last answer on screen: flipping every
+		// room to 检测中 and back each interval made the cards blink and re-sort.
+		if rt.sess == nil && rt.snapshot().CheckedAt.IsZero() {
 			rt.update(func(st *State) { st.Phase = PhaseChecking })
 		}
 		info, err := rt.m.resolve(ctx, room)
@@ -283,10 +330,13 @@ func (rt *runtime) loop(ctx context.Context, done chan struct{}) {
 			checkErrs++
 			msg := "检测失败：" + shortErr(err)
 			slog.Warn("resolve failed", "room", room.URL, "attempt", checkErrs, "err", err)
-			if rt.sess != nil {
+			if !rt.endingAt.IsZero() && now.After(rt.endingAt) {
+				rt.finishLive(room, s) // the wait ran out; errors don't extend it
+			}
+			if rt.sess != nil && rt.endingAt.IsZero() {
 				// Mid-live: an error says nothing about whether the stream ended. Keep retrying fast.
 				if now.Sub(rt.sess.lastAlive) > sessionGrace {
-					rt.endSession("长时间无法恢复")
+					rt.closeSession("长时间无法恢复")
 				} else {
 					rt.update(func(st *State) { st.Phase, st.LastError, st.CheckedAt = PhaseReconnecting, msg, now })
 					rt.sleep(ctx, backoff(checkErrs, 3*time.Second, 30*time.Second))
@@ -305,27 +355,47 @@ func (rt *runtime) loop(ctx context.Context, done chan struct{}) {
 			continue
 		}
 		checkErrs = 0
-		if !room.CustomName {
-			rt.m.renameIfAuto(rt.id, info.Anchor)
-		}
+		rt.m.learn(rt.id, info.Anchor, info.Ident)
 
 		if !info.IsLive {
-			if rt.sess != nil {
-				offlineHits++
-				if offlineHits < offlineConfirmations && now.Sub(rt.sess.lastAlive) < sessionGrace {
-					rt.update(func(st *State) {
-						st.Phase, st.CheckedAt = PhaseReconnecting, now
-						st.LastError = fmt.Sprintf("平台返回未开播，确认中（%d/%d）", offlineHits, offlineConfirmations)
-					})
-					rt.sleep(ctx, time.Duration(5*offlineHits)*time.Second)
+			if rt.watch != nil || rt.sess != nil {
+				if rt.endingAt.IsZero() {
+					// One "not live" right after a drop is common (the site lags behind the CDN), and
+					// believing it would end the recording, or announce the end and then a second start.
+					offlineHits++
+					inGrace := rt.sess == nil || now.Sub(rt.sess.lastAlive) < sessionGrace
+					if offlineHits < offlineConfirmations && inGrace {
+						rt.update(func(st *State) {
+							st.CheckedAt = now
+							if rt.sess != nil {
+								st.Phase = PhaseReconnecting
+								st.LastError = fmt.Sprintf("平台返回未开播，确认中（%d/%d）", offlineHits, offlineConfirmations)
+							}
+						})
+						rt.sleep(ctx, time.Duration(offlineHits)*confirmStep)
+						continue
+					}
+					// Off air for sure. Streamers often come back within minutes (app restart, network
+					// switch): until the wait is over that continues this 场 — same recording session,
+					// no second 开播 alert, 录这一场 still on.
+					if wait := resumeWait(s); wait > 0 {
+						rt.endingAt = now.Add(wait)
+						slog.Info("off air, waiting for a resume", "room", room.URL, "until", rt.endingAt.Format("15:04:05"))
+						rt.update(func(st *State) {
+							st.Phase, st.IsLive, st.Detail, st.CheckedAt, st.LiveTitle, st.LastError = PhaseOffline, false, DetailResumeWait, now, "", ""
+							st.SpeedBps = 0
+						})
+						rt.sleep(ctx, jitter(interval))
+						continue
+					}
+				} else if now.Before(rt.endingAt) {
+					rt.update(func(st *State) { st.CheckedAt = now })
+					rt.sleep(ctx, jitter(interval))
 					continue
 				}
-				rt.endSession("直播已结束")
+				rt.finishLive(room, s)
 			}
 			offlineHits = 0
-			rt.ctlMu.Lock()
-			rt.recordPaused, rt.liveNotified = false, false
-			rt.ctlMu.Unlock()
 			rt.update(func(st *State) {
 				st.Phase, st.IsLive, st.Detail, st.CheckedAt, st.LiveTitle, st.LastError = PhaseOffline, false, "", now, "", ""
 			})
@@ -334,18 +404,26 @@ func (rt *runtime) loop(ctx context.Context, done chan struct{}) {
 		}
 
 		offlineHits = 0
-		rt.update(func(st *State) { st.IsLive, st.LiveTitle, st.CheckedAt = true, info.Title, now })
+		if !rt.endingAt.IsZero() {
+			slog.Info("back on air within the wait: same 场", "room", room.URL)
+			rt.endingAt = time.Time{}
+			if rt.sess != nil {
+				rt.sess.lastAlive = now // the wait isn't a stall
+			}
+		}
+		rt.update(func(st *State) { st.IsLive, st.LiveTitle, st.CheckedAt, st.Detail = true, info.Title, now, "" })
+		if rt.watch == nil {
+			rt.watch = &liveWatch{since: now, anchor: displayName(room, info)}
+		}
+		rt.watch.lastLive = now
+		if w := rt.watch; !w.announced && alerts(room) {
+			w.announced = true
+			go sendAlert(context.Background(), s, notify.Event{Start: true, Anchor: w.anchor, Title: info.Title, URL: room.URL})
+		}
 
 		// Live, but not to be recorded right now.
 		if reason := rt.skipReason(room, info); reason != "" {
-			rt.endSession("已停止录制")
-			rt.ctlMu.Lock()
-			first := !rt.liveNotified
-			rt.liveNotified = true
-			rt.ctlMu.Unlock()
-			if first && room.Push && reason == DetailNotifyOnly {
-				go notify.Send(context.Background(), s, notify.Event{Start: true, Anchor: displayName(room, info), Title: info.Title, URL: room.URL})
-			}
+			rt.closeSession("已停止录制")
 			phase := PhaseLive
 			if reason == DetailNoSpace {
 				phase = PhaseError
@@ -387,7 +465,7 @@ func (rt *runtime) loop(ctx context.Context, done chan struct{}) {
 
 func (rt *runtime) skipReason(room store.Room, _ *platform.StreamInfo) string {
 	switch {
-	case room.NotifyOnly:
+	case room.NotifyOnly && !rt.isRecordOnce():
 		return DetailNotifyOnly
 	case rt.isRecordPaused():
 		return DetailRecordPaused
@@ -414,17 +492,36 @@ func (rt *runtime) beginSession(room store.Room, info *platform.StreamInfo, s st
 	rt.update(func(st *State) {
 		st.SessionStart, st.Recorded, st.Bytes, st.Reconnects, st.Dir, st.LastError = now, 0, 0, 0, dir, ""
 	})
-	if room.Push {
-		rt.sess.notified = true
-		go notify.Send(context.Background(), s, notify.Event{Start: true, Anchor: rt.sess.anchor, Title: info.Title, URL: room.URL})
-	}
 }
 
 // endSession closes the current session: finalisation (merge/remux) runs in the background.
-func (rt *runtime) endSession(why string) {
+// closeSession ends the recording session, if any, counting its time towards the live.
+func (rt *runtime) closeSession(why string) {
+	if d := rt.endSession(why); rt.watch != nil {
+		rt.watch.recorded += d
+	}
+}
+
+// finishLive closes the 场: its last recording session, the 下播 alert, and the switches that last
+// one live (录这一场, 停止本次录制).
+func (rt *runtime) finishLive(room store.Room, s store.Settings) {
+	rt.closeSession("直播已结束")
+	if w := rt.watch; w != nil && w.announced {
+		go sendAlert(context.Background(), s, notify.Event{Start: false, Anchor: w.anchor, URL: room.URL,
+			Live: w.lastLive.Sub(w.since), Recorded: w.recorded})
+	}
+	rt.watch, rt.endingAt = nil, time.Time{}
+	rt.ctlMu.Lock()
+	rt.recordPaused, rt.recordOnce = false, false
+	rt.ctlMu.Unlock()
+}
+
+// endSession closes the current session and returns how long it recorded. Alerts are the loop's
+// business (see liveWatch): a session also ends while the live goes on.
+func (rt *runtime) endSession(why string) time.Duration {
 	sess := rt.sess
 	if sess == nil {
-		return
+		return 0
 	}
 	rt.sess = nil
 	rt.update(func(st *State) {
@@ -433,12 +530,9 @@ func (rt *runtime) endSession(why string) {
 	room, _ := rt.m.room(rt.id)
 	s := rt.m.Settings()
 	slog.Info("session ended", "room", room.URL, "why", why, "parts", sess.parts, "recorded", sess.recorded.Round(time.Second))
-	if sess.notified {
-		go notify.Send(context.Background(), s, notify.Event{Start: false, Anchor: sess.anchor, URL: room.URL, Recorded: sess.recorded})
-	}
 	if len(sess.files) == 0 {
 		rt.m.journalDelete(sess.key)
-		return
+		return sess.recorded
 	}
 	opt := recorder.FinalizeOptions{
 		Merge:          s.Bool("merge_sessions"),
@@ -456,6 +550,7 @@ func (rt *runtime) endSession(why string) {
 			rt.m.toast("「%s」本场录制已保存为 %d 个文件", sess.anchor, len(out))
 		}
 	}()
+	return sess.recorded
 }
 
 func mergedNote(parts int, merged bool) string {

@@ -71,6 +71,11 @@ type StreamInfo struct {
 	Anchor   string // streamer display name
 	Title    string // current live title
 	IsLive   bool
+
+	// Ident is the streamer's stable id on the site (bilibili: real room id; douyin: web_rid, i.e. the
+	// 抖音号), "" when the link doesn't reveal one. Two links with the same Ident are the same streamer.
+	Ident string
+
 	// The fields below are set only when IsLive is true.
 	Quality   Quality           // the tier actually selected (may differ from the request when unavailable)
 	FlvURL    string            // FLV pull URL, if offered
@@ -97,6 +102,26 @@ type Resolver interface {
 
 // ErrUnsupported is returned when a URL shape is recognised as the site but cannot be handled.
 var ErrUnsupported = errors.New("unsupported room url")
+
+// UnsupportedError is an ErrUnsupported whose Reason can be shown to the user as is
+// (e.g. "这个 B站用户还没有开通直播间").
+type UnsupportedError struct{ Reason string }
+
+func (e *UnsupportedError) Error() string        { return e.Reason }
+func (e *UnsupportedError) Is(target error) bool { return target == ErrUnsupported }
+
+// Canonical is a room link as it should be stored, plus the streamer's identity.
+type Canonical struct {
+	URL   string // may be the link as given, when it's the more durable form
+	Ident string // see StreamInfo.Ident; "" when unknown
+}
+
+// Canonicalizer is implemented by every resolver. The manager calls it once when a room is added or
+// its link edited: to store a stable URL, and to spot the same streamer added through another link
+// (every 分享 makes a new short code). An *UnsupportedError means the link can't be a room.
+type Canonicalizer interface {
+	Canonical(ctx context.Context, url string, opt Options) (Canonical, error)
+}
 
 var registry []Resolver
 

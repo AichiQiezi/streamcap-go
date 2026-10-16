@@ -1,8 +1,8 @@
-import { ChevronDown, CircleAlert } from "lucide-react";
+import { Bell, ChevronDown, CircleAlert, CircleDot } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { detectPlatform, platformColor, platformName } from "@/lib/platforms";
+import { detectPlatform, extractLinks, platformColor, platformName } from "@/lib/platforms";
 import { useStore } from "@/lib/store";
 import type { Rec, RecInput, SettingsValues } from "@/lib/types";
 import { Button, cx, Dialog, Field, Input, Segmented, Select, Switch } from "./ui";
@@ -93,11 +93,7 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
 
   const lines = useMemo(
     () =>
-      (f?.urls ?? "")
-        .split(/[\s,，]+/)
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .map((url) => ({ url, platform: detectPlatform(url) })),
+      extractLinks(f?.urls ?? "").map((url) => ({ url, platform: detectPlatform(url) })),
     [f?.urls],
   );
   const valid = lines.filter((l) => l.platform);
@@ -129,7 +125,8 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
     setSaving(true);
     try {
       if (editing) {
-        const res = await api.edit(editing.id, { ...base, url: f.urls.trim(), streamer_name: f.name.trim() || editing.name });
+        const url = extractLinks(f.urls)[0] ?? f.urls.trim();
+        const res = await api.edit(editing.id, { ...base, url, streamer_name: f.name.trim() || editing.name });
         useStore.getState().upsert(res);
         toast.success("已保存");
       } else {
@@ -159,7 +156,7 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
       open={open}
       onOpenChange={onOpenChange}
       title={editing ? `编辑「${editing.name}」` : "添加直播间"}
-      description={editing ? undefined : "粘贴直播间链接，一行一个，可以一次添加多个"}
+      description={editing ? undefined : "粘贴直播间或主播主页的链接，可以一次添加多个。手机 App 里「分享 → 复制链接」得到的整段文字直接粘贴就行"}
       footer={
         <>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
@@ -222,20 +219,51 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
             </Field>
           )}
 
-          <div className="grid grid-cols-[1fr_auto] items-end gap-4">
-            <Field label="画质">
-              <Segmented value={f.quality} onChange={(v) => set("quality", v)} options={options.qualities} />
-            </Field>
-            <Field label="格式">
-              <Select value={f.format} onChange={(v) => set("format", v)} options={formatOptions} className="w-[190px]" />
-            </Field>
-          </div>
+          <Field
+            label="开播后"
+            hint={
+              f.notifyOnly
+                ? "只发提醒，不录制、不占硬盘。提醒会发到「设置 → 推送渠道」里启用的渠道，默认是系统通知。"
+                : undefined
+            }
+          >
+            <Segmented
+              value={f.notifyOnly ? "notify" : "record"}
+              onChange={(v) => set("notifyOnly", v === "notify")}
+              options={[
+                { value: "record", label: <><CircleDot className="size-3.5" />自动录制</> },
+                { value: "notify", label: <><Bell className="size-3.5" />仅开播提醒</> },
+              ]}
+            />
+          </Field>
 
-          {!editing && (
-            <div className="rounded-xl border border-line px-4 py-1">
-              <Field inline label="添加后立即开始监控" hint="开播即自动录制；关闭则只添加到列表">
-                <Switch checked={f.monitor} onChange={(v) => set("monitor", v)} />
+          {!f.notifyOnly && (
+            <div className="grid grid-cols-[1fr_auto] items-end gap-4">
+              <Field label="画质">
+                <Segmented value={f.quality} onChange={(v) => set("quality", v)} options={options.qualities} />
               </Field>
+              <Field label="格式">
+                <Select value={f.format} onChange={(v) => set("format", v)} options={formatOptions} className="w-[190px]" />
+              </Field>
+            </div>
+          )}
+
+          {(!editing || !f.notifyOnly) && (
+            <div className="divide-y divide-line rounded-xl border border-line px-4">
+              {!editing && (
+                <Field
+                  inline
+                  label="添加后立即开始监控"
+                  hint={f.notifyOnly ? "开播时发提醒；关闭则只添加到列表" : "开播即自动录制；关闭则只添加到列表"}
+                >
+                  <Switch checked={f.monitor} onChange={(v) => set("monitor", v)} />
+                </Field>
+              )}
+              {!f.notifyOnly && (
+                <Field inline label="开播时也提醒我" hint="录制的同时，发一条开播提醒到已启用的推送渠道">
+                  <Switch checked={f.push} onChange={(v) => set("push", v)} />
+                </Field>
+              )}
             </div>
           )}
 
@@ -250,30 +278,34 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
             </button>
             {advanced && (
               <div className="mt-3 divide-y divide-line rounded-xl border border-line px-4">
-                <Field inline label="分段录制" hint="按时长切成多个文件，长时间录制更安全">
-                  <div className="flex items-center gap-2">
-                    {f.segment && (
-                      <div className="flex items-center gap-1.5 text-[12px] text-fg-3">
-                        <Input className="h-7 w-20 text-right font-mono" value={f.segmentTime} onChange={(e) => set("segmentTime", e.target.value.replace(/\D/g, ""))} />
-                        秒
+                {!f.notifyOnly && (
+                  <>
+                    <Field inline label="分段录制" hint="按时长切成多个文件，长时间录制更安全">
+                      <div className="flex items-center gap-2">
+                        {f.segment && (
+                          <div className="flex items-center gap-1.5 text-[12px] text-fg-3">
+                            <Input className="h-7 w-20 text-right font-mono" value={f.segmentTime} onChange={(e) => set("segmentTime", e.target.value.replace(/\D/g, ""))} />
+                            秒
+                          </div>
+                        )}
+                        <Switch checked={f.segment} onChange={(v) => set("segment", v)} />
                       </div>
+                    </Field>
+                    {!AUDIO.has(f.format) && (
+                      <Field inline label="自定义码率" hint="留空则原样保存（推荐）；填写会重新编码，占用较多 CPU">
+                        <div className="flex items-center gap-1.5 text-[12px] text-fg-3">
+                          <Input className="h-7 w-24 text-right font-mono" placeholder="原始" value={f.bitrate} onChange={(e) => set("bitrate", e.target.value.replace(/\D/g, ""))} />
+                          kbps
+                        </div>
+                      </Field>
                     )}
-                    <Switch checked={f.segment} onChange={(v) => set("segment", v)} />
-                  </div>
-                </Field>
-                {!AUDIO.has(f.format) && (
-                  <Field inline label="自定义码率" hint="留空则原样保存（推荐）；填写会重新编码，占用较多 CPU">
-                    <div className="flex items-center gap-1.5 text-[12px] text-fg-3">
-                      <Input className="h-7 w-24 text-right font-mono" placeholder="原始" value={f.bitrate} onChange={(e) => set("bitrate", e.target.value.replace(/\D/g, ""))} />
-                      kbps
+                    <div className="py-3">
+                      <Field label="保存目录" hint="留空使用设置里的默认目录">
+                        <Input value={f.dir} onChange={(e) => set("dir", e.target.value)} placeholder={defaultDir || "默认目录"} className="font-mono text-[12px]" />
+                      </Field>
                     </div>
-                  </Field>
+                  </>
                 )}
-                <div className="py-3">
-                  <Field label="保存目录" hint="留空使用设置里的默认目录">
-                    <Input value={f.dir} onChange={(e) => set("dir", e.target.value)} placeholder={defaultDir || "默认目录"} className="font-mono text-[12px]" />
-                  </Field>
-                </div>
                 <Field inline label="定时监控" hint="只在每天指定时段内检测开播">
                   <Switch checked={f.scheduled} onChange={(v) => set("scheduled", v)} />
                 </Field>
@@ -286,12 +318,6 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
                     小时
                   </div>
                 )}
-                <Field inline label="开播消息推送" hint="需在设置里配置推送渠道">
-                  <Switch checked={f.push} onChange={(v) => set("push", v)} />
-                </Field>
-                <Field inline label="仅通知，不录制">
-                  <Switch checked={f.notifyOnly} onChange={(v) => set("notifyOnly", v)} />
-                </Field>
               </div>
             )}
           </div>

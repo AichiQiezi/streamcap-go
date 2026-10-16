@@ -21,7 +21,8 @@ const ERROR_TEXT: Record<string, string> = {
 
 export function stateLabel(r: Rec): string {
   if (r.state === "error") return ERROR_TEXT[r.status_info ?? ""] ?? "异常";
-  if (r.state === "live" && r.status_info === "NOTIFY_ONLY") return "直播中 · 仅通知";
+  if (r.state === "live" && r.status_info === "NOTIFY_ONLY") return "直播中 · 已提醒";
+  if (r.state === "offline" && r.status_info === "RESUME_WAIT") return "已下播 · 等待续播";
   if (r.state === "live" && r.status_info === "RECORD_PAUSED") return "直播中 · 已停止录制";
   return STATE_META[r.state]?.label ?? r.state;
 }

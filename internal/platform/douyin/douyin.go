@@ -14,12 +14,14 @@ package douyin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AichiQiezi/streamcap-go/internal/platform"
@@ -87,11 +89,11 @@ func (r resolver) Resolve(ctx context.Context, roomURL string, opt platform.Opti
 	var room *roomData
 	switch {
 	case host == "v.douyin.com":
-		room, err = c.fromShareLink(ctx, roomURL)
+		room, err = c.cached(ctx, roomURL, func() (*roomData, error) { return c.fromShareLink(ctx, roomURL) })
 	case len(segs) == 2 && segs[0] == "user":
 		// www.douyin.com/user/<sec_uid>: streamget fetches the page only to read the sec_uid back out of
 		// the final URL; it is already in the path, so go straight to the profile lookup.
-		room, err = c.fromSecUID(ctx, segs[1])
+		room, err = c.cached(ctx, "sec:"+segs[1], func() (*roomData, error) { return c.fromSecUID(ctx, segs[1]) })
 	default:
 		webRid := webRidFromPath(host, segs)
 		if webRid == "" {
@@ -103,6 +105,20 @@ func (r resolver) Resolve(ctx context.Context, roomURL string, opt platform.Opti
 		return nil, err
 	}
 	return c.toStreamInfo(ctx, roomURL, room)
+}
+
+// Canonical implements platform.Canonicalizer. Douyin links are stored as given: a profile share
+// link keeps working after the streamer changes their 抖音号, the live.douyin.com/<抖音号> it maps
+// to wouldn't. Resolving once yields the identity, and warms the cache for the first check.
+func (r resolver) Canonical(ctx context.Context, roomURL string, opt platform.Options) (platform.Canonical, error) {
+	info, err := r.Resolve(ctx, roomURL, opt)
+	if err != nil {
+		if errors.Is(err, platform.ErrUnsupported) {
+			return platform.Canonical{}, &platform.UnsupportedError{Reason: "不是抖音直播间或主播主页的链接"}
+		}
+		return platform.Canonical{}, err
+	}
+	return platform.Canonical{URL: strings.TrimSpace(roomURL), Ident: info.Ident}, nil
 }
 
 func pathSegments(p string) []string {
@@ -131,11 +147,37 @@ func webRidFromPath(host string, segs []string) string {
 	return ""
 }
 
+// webRids remembers the web_rid (the user's unique_id) a profile link led to. Getting there costs
+// following the short link and loading the profile page; afterwards a check is one API call, which
+// is what makes short check intervals affordable. Live-room shares aren't stored: they name one
+// broadcast, not the user.
+var webRids sync.Map // share link or "sec:"+sec_uid -> web_rid
+
+// cached resolves key through its remembered web_rid when there is one, and otherwise (or when that
+// fails: the user may have changed their 抖音号) through the full lookup, remembering the result.
+func (c *client) cached(ctx context.Context, key string, full func() (*roomData, error)) (*roomData, error) {
+	if v, ok := webRids.Load(key); ok {
+		if rd, err := c.fetchWeb(ctx, v.(string)); err == nil {
+			return rd, nil
+		} else if ctx.Err() != nil {
+			return nil, err
+		}
+		webRids.Delete(key)
+	}
+	rd, err := full()
+	if err == nil && rd.viaProfile {
+		webRids.Store(key, rd.webRid)
+	}
+	return rd, err
+}
+
 // roomData is the normalised result of either API.
 type roomData struct {
-	webRid string
-	anchor string
-	room   roomJSON
+	webRid     string
+	viaProfile bool // found through the user's profile: webRid is their stable unique_id
+	stable     bool // webRid identifies the streamer (not just this broadcast)
+	anchor     string
+	room       roomJSON
 }
 
 type client struct {
@@ -228,7 +270,7 @@ func (c *client) fetchWeb(ctx context.Context, webRid string) (*roomData, error)
 		msg := firstNonEmpty(r.Data.Prompts, r.Data.Message, "no room data (VR live is not supported)")
 		return nil, fmt.Errorf("douyin: room enter api (web_rid %s): status_code %d: %s", webRid, r.StatusCode, msg)
 	}
-	rd := &roomData{webRid: webRid, room: r.Data.Data[0]}
+	rd := &roomData{webRid: webRid, stable: true, room: r.Data.Data[0]}
 	if r.Data.User != nil {
 		rd.anchor = r.Data.User.Nickname
 	}
@@ -286,7 +328,11 @@ func (c *client) fromSecUID(ctx context.Context, secUID string) (*roomData, erro
 	if len(m) == 0 || len(m[len(m)-1][1]) == 0 {
 		return nil, fmt.Errorf("douyin: user profile %s: unique_id not found", secUID)
 	}
-	return c.fetchWeb(ctx, string(m[len(m)-1][1]))
+	rd, err := c.fetchWeb(ctx, string(m[len(m)-1][1]))
+	if rd != nil {
+		rd.viaProfile = true
+	}
+	return rd, err
 }
 
 // fetchApp calls the app reflow API for a room_id + sec_user_id (streamget fetch_app_stream_data).
@@ -337,8 +383,9 @@ func (c *client) fetchApp(ctx context.Context, roomID, secUID string) (*roomData
 	if o := r.Data.Room.Owner; o != nil {
 		rd.anchor, rd.webRid = o.Nickname, o.WebRid
 	}
+	rd.stable = rd.webRid != ""
 	if rd.webRid == "" {
-		rd.webRid = roomID
+		rd.webRid = roomID // this broadcast's id: fine to show, useless as an identity
 	}
 	return rd, nil
 }
@@ -349,6 +396,9 @@ func (c *client) toStreamInfo(ctx context.Context, roomURL string, rd *roomData)
 		RoomURL:  roomURL,
 		RoomID:   rd.webRid,
 		Anchor:   rd.anchor,
+	}
+	if rd.stable {
+		info.Ident = rd.webRid
 	}
 	if rd.room.Status != statusLive {
 		return info, nil

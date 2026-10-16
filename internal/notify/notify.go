@@ -27,122 +27,155 @@ type Event struct {
 	Anchor string
 	Title  string
 	URL    string
-	// Recorded is how long this session recorded (end events only).
+	// Recorded is how long this session recorded (end events of recorded rooms).
 	Recorded time.Duration
+	// Live is roughly how long the stream was live (end events of notify-only rooms).
+	Live time.Duration
 }
 
-// Send formats ev with the user's templates and pushes it to every enabled channel. Failures are
-// logged, never returned: a broken webhook must not affect recording.
-func Send(ctx context.Context, s store.Settings, ev Event) {
-	if ev.Start && !s.Bool("stream_start_notification_enabled") {
-		return
-	}
-	if !ev.Start && !s.Bool("stream_end_notification_enabled") {
-		return
-	}
-	title := s.String("custom_notification_title")
-	if title == "" {
-		title = "直播间状态更新通知"
-	}
-	content := render(s, ev)
+// message is what every channel gets: a title, the rendered body and the live room's link.
+type message struct {
+	Title, Body, URL string
+}
+
+// sender carries the per-send state the channels share.
+type sender struct {
+	ctx     context.Context
+	s       store.Settings
+	client  *http.Client
+	proxied *http.Client // for channels that are usually blocked without the user's proxy
+}
+
+type channel struct {
+	id     string // also the settings prefix: <id>_enabled etc.
+	name   string
+	enable string
+	send   func(x *sender, m message) error
+}
+
+// SystemNotifier shows a desktop notification. Set by the app when it runs with a desktop (not
+// -headless); nil otherwise, and then the system channel reports why it can't deliver.
+var SystemNotifier func(title, body, url string) error
+
+var channels = []channel{
+	{"system", "系统通知", "system_notify_enabled", func(x *sender, m message) error {
+		if SystemNotifier == nil {
+			return fmt.Errorf("当前运行方式没有桌面（-headless），无法弹出系统通知")
+		}
+		return SystemNotifier(m.Title, m.Body, m.URL)
+	}},
+	{"qqbot", "QQ 机器人", "qqbot_enabled", sendQQ},
+	{"dingtalk", "钉钉", "dingtalk_enabled", func(x *sender, m message) error {
+		return eachURL(x.s.String("dingtalk_webhook_url"), func(u string) error {
+			at := map[string]any{"atMobiles": splitList(x.s.String("dingtalk_at_objects")), "isAtAll": x.s.Bool("dingtalk_at_all")}
+			return postJSON(x.ctx, x.client, u, map[string]any{"msgtype": "text", "text": map[string]any{"content": m.Body}, "at": at},
+				func(r map[string]any) bool { return num(r["errcode"]) == 0 })
+		})
+	}},
+	{"wechat", "微信", "wechat_enabled", func(x *sender, m message) error {
+		return eachURL(x.s.String("wechat_webhook_url"), func(u string) error {
+			return postJSON(x.ctx, x.client, u, map[string]any{"title": m.Title, "content": m.Body},
+				func(r map[string]any) bool { return num(r["code"]) == 200 })
+		})
+	}},
+	{"feishu", "飞书", "feishu_enabled", func(x *sender, m message) error {
+		return eachURL(x.s.String("feishu_webhook_url"), func(u string) error {
+			return postJSON(x.ctx, x.client, u, map[string]any{"msg_type": "text", "content": map[string]any{"text": m.Body}},
+				func(r map[string]any) bool { return r["msg"] == "success" || num(r["code"]) == 0 })
+		})
+	}},
+	{"bark", "Bark", "bark_enabled", func(x *sender, m message) error {
+		return eachURL(x.s.String("bark_webhook_url"), func(u string) error {
+			body := map[string]any{"title": m.Title, "body": m.Body, "level": x.s.String("bark_interrupt_level"),
+				"badge": 1, "autoCopy": 1, "sound": x.s.String("bark_sound"), "isArchive": 1, "url": m.URL}
+			return postJSON(x.ctx, x.client, u, body, func(r map[string]any) bool { return num(r["code"]) == 200 })
+		})
+	}},
+	{"ntfy", "ntfy", "ntfy_enabled", func(x *sender, m message) error {
+		return eachURL(x.s.String("ntfy_server_url"), func(u string) error {
+			server, topic, ok := cutLast(u, "/")
+			if !ok {
+				return fmt.Errorf("ntfy 地址需要形如 https://ntfy.sh/topic")
+			}
+			body := map[string]any{"topic": topic, "title": m.Title, "message": m.Body, "tags": splitList(x.s.String("ntfy_tags")), "priority": 3}
+			if a := x.s.String("ntfy_action_url"); a != "" {
+				body["actions"] = []map[string]string{{"action": "view", "label": "view live", "url": a}}
+			}
+			if e := x.s.String("ntfy_email"); e != "" {
+				body["email"] = e
+			}
+			return postJSON(x.ctx, x.client, server, body, func(r map[string]any) bool { return r["id"] != nil })
+		})
+	}},
+	{"serverchan", "Server酱", "serverchan_enabled", func(x *sender, m message) error {
+		return eachURL(x.s.String("serverchan_sendkey"), func(key string) error {
+			u := "https://sctapi.ftqq.com/" + key + ".send"
+			if strings.HasPrefix(key, "sctp") {
+				mm := regexp.MustCompile(`^sctp(\d+)t`).FindStringSubmatch(key)
+				if mm == nil {
+					return fmt.Errorf("无效的 sendkey")
+				}
+				u = fmt.Sprintf("https://%s.push.ft07.com/send/%s.send", mm[1], key)
+			}
+			body := map[string]any{"title": m.Title, "desp": m.Body, "channel": x.s.Int("serverchan_channel", 9), "tags": x.s.String("serverchan_tags")}
+			return postJSON(x.ctx, x.client, u, body, func(r map[string]any) bool { return num(r["code"]) == 0 })
+		})
+	}},
+	{"telegram", "Telegram", "telegram_enabled", func(x *sender, m message) error {
+		u := "https://api.telegram.org/bot" + x.s.String("telegram_api_token") + "/sendMessage"
+		return postJSON(x.ctx, x.proxied, u, map[string]any{"chat_id": x.s.String("telegram_chat_id"), "text": m.Body},
+			func(r map[string]any) bool { return r["ok"] == true })
+	}},
+	{"email", "邮件", "email_enabled", func(x *sender, m message) error { return sendMail(x.s, m.Title, m.Body) }},
+}
+
+func newSender(ctx context.Context, s store.Settings) *sender {
 	proxy := ""
 	if s.Bool("enable_proxy") {
 		proxy = platform.ProxyURL(s.String("proxy_address"))
 	}
-	client := &http.Client{Timeout: 15 * time.Second}
-	proxied := platform.HTTPClient(proxy)
+	return &sender{ctx: ctx, s: s, client: &http.Client{Timeout: 15 * time.Second}, proxied: platform.HTTPClient(proxy)}
+}
 
-	type job struct {
-		name string
-		fn   func() error
+func title(s store.Settings) string {
+	if t := s.String("custom_notification_title"); t != "" {
+		return t
 	}
-	var jobs []job
-	if s.Bool("dingtalk_enabled") {
-		jobs = append(jobs, job{"钉钉", func() error {
-			return eachURL(s.String("dingtalk_webhook_url"), func(u string) error {
-				at := map[string]any{"atMobiles": splitList(s.String("dingtalk_at_objects")), "isAtAll": s.Bool("dingtalk_at_all")}
-				return postJSON(ctx, client, u, map[string]any{"msgtype": "text", "text": map[string]any{"content": content}, "at": at},
-					func(r map[string]any) bool { return num(r["errcode"]) == 0 })
-			})
-		}})
-	}
-	if s.Bool("wechat_enabled") {
-		jobs = append(jobs, job{"微信", func() error {
-			return eachURL(s.String("wechat_webhook_url"), func(u string) error {
-				return postJSON(ctx, client, u, map[string]any{"title": title, "content": content},
-					func(r map[string]any) bool { return num(r["code"]) == 200 })
-			})
-		}})
-	}
-	if s.Bool("feishu_enabled") {
-		jobs = append(jobs, job{"飞书", func() error {
-			return eachURL(s.String("feishu_webhook_url"), func(u string) error {
-				return postJSON(ctx, client, u, map[string]any{"msg_type": "text", "content": map[string]any{"text": content}},
-					func(r map[string]any) bool { return r["msg"] == "success" || num(r["code"]) == 0 })
-			})
-		}})
-	}
-	if s.Bool("bark_enabled") {
-		jobs = append(jobs, job{"Bark", func() error {
-			return eachURL(s.String("bark_webhook_url"), func(u string) error {
-				body := map[string]any{"title": title, "body": content, "level": s.String("bark_interrupt_level"),
-					"badge": 1, "autoCopy": 1, "sound": s.String("bark_sound"), "isArchive": 1, "url": ev.URL}
-				return postJSON(ctx, client, u, body, func(r map[string]any) bool { return num(r["code"]) == 200 })
-			})
-		}})
-	}
-	if s.Bool("ntfy_enabled") {
-		jobs = append(jobs, job{"ntfy", func() error {
-			return eachURL(s.String("ntfy_server_url"), func(u string) error {
-				server, topic, ok := cutLast(u, "/")
-				if !ok {
-					return fmt.Errorf("ntfy 地址需要形如 https://ntfy.sh/topic")
-				}
-				body := map[string]any{"topic": topic, "title": title, "message": content, "tags": splitList(s.String("ntfy_tags")), "priority": 3}
-				if a := s.String("ntfy_action_url"); a != "" {
-					body["actions"] = []map[string]string{{"action": "view", "label": "view live", "url": a}}
-				}
-				if e := s.String("ntfy_email"); e != "" {
-					body["email"] = e
-				}
-				return postJSON(ctx, client, server, body, func(r map[string]any) bool { return r["id"] != nil })
-			})
-		}})
-	}
-	if s.Bool("serverchan_enabled") {
-		jobs = append(jobs, job{"Server酱", func() error {
-			return eachURL(s.String("serverchan_sendkey"), func(key string) error {
-				u := "https://sctapi.ftqq.com/" + key + ".send"
-				if strings.HasPrefix(key, "sctp") {
-					m := regexp.MustCompile(`^sctp(\d+)t`).FindStringSubmatch(key)
-					if m == nil {
-						return fmt.Errorf("无效的 sendkey")
-					}
-					u = fmt.Sprintf("https://%s.push.ft07.com/send/%s.send", m[1], key)
-				}
-				body := map[string]any{"title": title, "desp": content, "channel": s.Int("serverchan_channel", 9), "tags": s.String("serverchan_tags")}
-				return postJSON(ctx, client, u, body, func(r map[string]any) bool { return num(r["code"]) == 0 })
-			})
-		}})
-	}
-	if s.Bool("telegram_enabled") {
-		jobs = append(jobs, job{"Telegram", func() error {
-			u := "https://api.telegram.org/bot" + s.String("telegram_api_token") + "/sendMessage"
-			return postJSON(ctx, proxied, u, map[string]any{"chat_id": s.String("telegram_chat_id"), "text": content},
-				func(r map[string]any) bool { return r["ok"] == true })
-		}})
-	}
-	if s.Bool("email_enabled") {
-		jobs = append(jobs, job{"邮件", func() error { return sendMail(s, title, content) }})
-	}
+	return "直播间状态更新通知"
+}
 
-	for _, j := range jobs {
-		if err := j.fn(); err != nil {
-			slog.Warn("push failed", "channel", j.name, "err", err)
+// Send formats ev with the user's templates and pushes it to every enabled channel. Whether a room
+// alerts at all is the caller's decision (the room's own switch); here only "下播时也提醒" gates.
+// Failures are logged, never returned: a broken webhook must not affect recording.
+func Send(ctx context.Context, s store.Settings, ev Event) {
+	if !ev.Start && !s.Bool("stream_end_notification_enabled") {
+		return
+	}
+	x := newSender(ctx, s)
+	m := message{Title: title(s), Body: render(s, ev), URL: ev.URL}
+	for _, c := range channels {
+		if !s.Bool(c.enable) {
+			continue
+		}
+		if err := c.send(x, m); err != nil {
+			slog.Warn("push failed", "channel", c.name, "err", err)
 		} else {
-			slog.Info("push sent", "channel", j.name)
+			slog.Info("push sent", "channel", c.name)
 		}
 	}
+}
+
+// Test sends a sample message through one channel, enabled or not, and returns its error so the
+// settings page can show it.
+func Test(ctx context.Context, s store.Settings, id string) error {
+	for _, c := range channels {
+		if c.id == id {
+			now := time.Now().Format("2006-01-02 15:04:05")
+			body := fmt.Sprintf("这是一条来自 StreamCap 的测试消息，收到说明「%s」已配置好。\n时间：%s", c.name, now)
+			return c.send(newSender(ctx, s), message{Title: "StreamCap 测试通知", Body: body})
+		}
+	}
+	return fmt.Errorf("未知的推送渠道：%s", id)
 }
 
 func render(s store.Settings, ev Event) string {
@@ -151,7 +184,14 @@ func render(s store.Settings, ev Event) string {
 	def := fmt.Sprintf("%s 开播了\n标题：%s\n%s\n时间：%s", ev.Anchor, ev.Title, ev.URL, now)
 	if !ev.Start {
 		tpl = s.String("custom_stream_end_content")
-		def = fmt.Sprintf("%s 下播了\n本场录制：%s\n时间：%s", ev.Anchor, ev.Recorded.Round(time.Second), now)
+		switch {
+		case ev.Recorded > 0:
+			def = fmt.Sprintf("%s 下播了\n本场录制：%s\n时间：%s", ev.Anchor, ev.Recorded.Round(time.Second), now)
+		case ev.Live > 0:
+			def = fmt.Sprintf("%s 下播了\n直播时长约：%s\n时间：%s", ev.Anchor, max(ev.Live.Round(time.Minute), time.Minute), now)
+		default:
+			def = fmt.Sprintf("%s 下播了\n时间：%s", ev.Anchor, now)
+		}
 	}
 	if strings.TrimSpace(tpl) == "" {
 		return def

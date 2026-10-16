@@ -33,6 +33,8 @@ export const api = {
   monitor: (id: string, on: boolean) => post<Rec>(`/api/recordings/${encodeURIComponent(id)}/monitor`, { on }),
   record: (id: string, on: boolean) => post<Rec>(`/api/recordings/${encodeURIComponent(id)}/record`, { on }),
   check: (id: string) => post<{ ok: boolean }>(`/api/recordings/${encodeURIComponent(id)}/check`),
+  /** Saves the room list's order (the default order in the UI). */
+  reorder: (ids: string[]) => request<{ ok: boolean }>("/api/recordings/order", { method: "PUT", body: JSON.stringify({ ids }) }),
   batch: (ids: string[], action: "start" | "stop" | "delete" | "check") =>
     post<{ ok: boolean; count: number }>("/api/recordings/batch", { ids, action }),
   openFolder: (id: string) => post<{ ok: boolean; path: string }>(`/api/recordings/${encodeURIComponent(id)}/open-folder`),
@@ -42,6 +44,12 @@ export const api = {
     request<{ ok: boolean }>("/api/settings", { method: "PUT", body: JSON.stringify(values) }),
   saveCookies: (values: Record<string, string>) =>
     request<{ ok: boolean }>("/api/cookies", { method: "PUT", body: JSON.stringify(values) }),
+
+  /** Sends a sample message through one push channel; `values` are unsaved settings edits. */
+  testNotify: (channel: string, values: Record<string, unknown>) =>
+    post<{ ok: boolean }>("/api/notify/test", { channel, values }),
+
+  openNotificationSettings: () => post<{ ok: boolean }>("/api/notify/system-settings"),
 
   quit: () => post<{ ok: boolean }>("/api/app/quit", {}),
 

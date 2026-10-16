@@ -1,5 +1,5 @@
-import { Check, Loader2 } from "lucide-react";
-import { memo, useState } from "react";
+import { Bell, Check, Loader2 } from "lucide-react";
+import { memo, useEffect, useState } from "react";
 import { thumbUrl } from "@/lib/api";
 import { bytes, clock, rate, resolution, useDuration } from "@/lib/format";
 import { platformColor, platformName } from "@/lib/platforms";
@@ -21,16 +21,34 @@ export function qualityLabel(q: string) {
   return useStore.getState().options.qualities.find((o) => o.value === q)?.label ?? q;
 }
 
+/**
+ * The newest thumbnail that has finished loading. A new frame arrives every ~30s; pointing <img> at
+ * it directly blanks the cover while it downloads, so the previous frame stays up until then.
+ */
+function useLoadedImage(src: string | null): string | null {
+  const [shown, setShown] = useState<string | null>(null);
+  useEffect(() => {
+    if (!src) return;
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => !cancelled && setShown(src);
+    img.src = src; // on error: keep whatever is shown (a stale frame beats a blank one)
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+  return src ? shown : null;
+}
+
 export function Cover({ r, compact }: { r: Rec; compact?: boolean }) {
   // Only live visuals get a real thumbnail: offline/paused cards render the
   // placeholder, so scrolling a long list doesn't fire thumbnail requests
   // for rooms that have nothing new to show.
   const live = r.state === "recording" || r.state === "reconnecting" || r.state === "live";
-  const src = live ? thumbUrl(r) : null;
-  const [failed, setFailed] = useState<string | null>(null);
+  const src = useLoadedImage(live ? thumbUrl(r) : null);
   const color = platformColor(r.platform_key);
   const dim = !live;
-  if (!src || failed === src) {
+  if (!src) {
     // Idle rooms get a quiet placeholder so the few live ones stand out in a long grid.
     const initial = (r.name || "?").slice(0, 1);
     return (
@@ -57,16 +75,45 @@ export function Cover({ r, compact }: { r: Rec; compact?: boolean }) {
   }
   return (
     <>
-      <img src={src} alt="" aria-hidden loading="lazy" decoding="async" className="absolute inset-0 size-full scale-125 object-cover opacity-50 blur-xl" />
+      <img src={src} alt="" aria-hidden decoding="async" className="absolute inset-0 size-full scale-125 object-cover opacity-50 blur-xl" />
       <img
         src={src}
         alt={`${r.name} 画面`}
-        loading="lazy"
         decoding="async"
-        onError={() => setFailed(src)}
-        className={cx("absolute inset-0 size-full object-contain transition", dim && "opacity-55 grayscale-[0.6]")}
+        className="absolute inset-0 size-full object-contain"
       />
     </>
+  );
+}
+
+export function NotifyOnlyBadge({ recording }: { recording?: boolean }) {
+  return (
+    <Tip label={recording ? "这一场在录，下播后恢复只提醒" : "只在开播时提醒，不录制"}>
+      <span className="inline-flex shrink-0 items-center gap-1 rounded bg-surface-3 px-1.5 py-px text-[11px] font-medium text-fg-2">
+        <Bell className="size-3" />
+        {recording ? "仅提醒 · 录这一场" : "仅提醒"}
+      </span>
+    </Tip>
+  );
+}
+
+/** For a notify-only room that is live: record this live only (shown on cards and list rows). */
+export function RecordThisLiveButton({ r, className }: { r: Rec; className?: string }) {
+  if (!r.only_notify_no_record || r.state !== "live") return null;
+  return (
+    <Tip label="只录这一场，下播后恢复只提醒">
+      <button
+        type="button"
+        onClick={() => recActions.recordThisLive(r)}
+        className={cx(
+          "inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11.5px] font-medium text-rec transition hover:bg-rec/10",
+          className,
+        )}
+      >
+        <span className="size-1.5 rounded-full bg-rec" />
+        录这一场
+      </button>
+    </Tip>
   );
 }
 
@@ -153,9 +200,13 @@ export const RecCard = memo(function RecCard({ r, selected, onSelect, onEdit, on
           <h3 className="min-w-0 truncate text-[14px] font-semibold tracking-[-0.01em]" title={r.name}>
             {r.name}
           </h3>
-          <span className="shrink-0 text-[11.5px] text-fg-3">
-            {qualityLabel(r.quality)} · {r.format}
-          </span>
+          {r.only_notify_no_record ? (
+            <NotifyOnlyBadge recording={r.is_recording} />
+          ) : (
+            <span className="shrink-0 text-[11.5px] text-fg-3">
+              {qualityLabel(r.quality)} · {r.format}
+            </span>
+          )}
         </div>
         <p className="truncate text-[12.5px] text-fg-2" title={r.live_title ?? undefined}>
           {r.live_title || <span className="text-fg-3">{r.url.replace(/^https?:\/\/(www\.)?/, "")}</span>}
@@ -194,6 +245,7 @@ export const RecCard = memo(function RecCard({ r, selected, onSelect, onEdit, on
                   {r.last_error}
                 </span>
               )}
+              <RecordThisLiveButton r={r} className="ml-auto" />
             </>
           )}
         </div>

@@ -4,14 +4,16 @@ package desktop
 
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
-#cgo LDFLAGS: -framework Cocoa
+#cgo LDFLAGS: -framework Cocoa -framework UserNotifications
 #include <stdlib.h>
 #include "darwin.h"
 */
 import "C"
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
@@ -103,3 +105,43 @@ func executable() string {
 
 // Alert is unused on macOS (errors are logged; the app runs from a terminal or Finder).
 func Alert(string, string) {}
+
+// Notify shows a Notification Center banner; clicking it opens url. Outside an .app bundle (go run,
+// the bare binary) Notification Center refuses unbundled processes, so it falls back to AppleScript,
+// whose banners come from "Script Editor" and can't open the link.
+func Notify(title, body, url string) error {
+	ct, cb, cu := C.CString(title), C.CString(body), C.CString(url)
+	defer C.free(unsafe.Pointer(ct))
+	defer C.free(unsafe.Pointer(cb))
+	defer C.free(unsafe.Pointer(cu))
+	res := C.sc_notify(ct, cb, cu)
+	if res == nil {
+		return nil
+	}
+	msg := C.GoString(res)
+	C.free(unsafe.Pointer(res))
+	switch {
+	case strings.HasPrefix(msg, "denied"):
+		return fmt.Errorf("系统通知被关闭了：到「系统设置 → 通知 → StreamCap」里允许通知（%s）", msg)
+	case msg == "not running from an .app bundle":
+		return osascriptNotify(title, body)
+	default:
+		return fmt.Errorf("发送系统通知失败：%s", msg)
+	}
+}
+
+// OpenNotificationSettings opens System Settings at StreamCap's notification switch.
+func OpenNotificationSettings() error {
+	return exec.Command("open", "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=io.github.aichiqiezi.streamcap").Run()
+}
+
+func osascriptNotify(title, body string) error {
+	// Pass the text as arguments rather than splicing it into the script: no quoting to get wrong.
+	script := `on run argv
+display notification (item 2 of argv) with title (item 1 of argv) sound name "default"
+end run`
+	if out, err := exec.Command("osascript", "-e", script, title, body).CombinedOutput(); err != nil {
+		return fmt.Errorf("osascript: %v %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}

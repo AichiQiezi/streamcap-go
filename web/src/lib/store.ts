@@ -83,7 +83,7 @@ function wsUrl(): string {
 }
 
 interface WsMessage {
-  event: "recording" | "removed" | "toast" | "quitting";
+  event: "recording" | "removed" | "toast" | "quitting" | "order";
   data: unknown;
 }
 
@@ -92,6 +92,12 @@ function handleMessage(msg: WsMessage) {
   if (msg.event === "recording") queueUpsert(msg.data as Rec);
   else if (msg.event === "removed") st.drop(msg.data as string[]);
   else if (msg.event === "quitting") useStore.setState({ quitting: true });
+  else if (msg.event === "order") {
+    // Reordered (here or in another window): adopt it, keeping any room the list doesn't know yet.
+    const ids = (msg.data as string[]).filter((id) => id in st.recs);
+    const rest = st.order.filter((id) => !ids.includes(id));
+    useStore.setState({ order: [...ids, ...rest] });
+  }
   else if (msg.event === "toast" && msg.data && typeof (msg.data as { text?: unknown }).text === "string") {
     toast.message((msg.data as { text: string }).text);
   }

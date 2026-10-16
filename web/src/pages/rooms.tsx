@@ -1,10 +1,12 @@
 import { LayoutGrid, List, Pause, Play, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { closestCenter, DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { arrayMove, rectSortingStrategy, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { RecCard } from "@/components/rec-card";
 import { RecFormDialog } from "@/components/rec-form";
 import { RecRow, RowHeader } from "@/components/rec-row";
-import { STATE_META } from "@/components/status";
 import { Button, Confirm, cx, Input, Kbd, Segmented, Select } from "@/components/ui";
 import { api } from "@/lib/api";
 import { bytes } from "@/lib/format";
@@ -12,7 +14,7 @@ import { platformName } from "@/lib/platforms";
 import { useStore } from "@/lib/store";
 import type { Rec } from "@/lib/types";
 
-type Filter = "all" | "recording" | "live" | "offline" | "paused" | "error";
+type Filter = "all" | "recording" | "live" | "offline" | "paused" | "error" | "notify";
 
 const FILTERS: { value: Filter; label: string; match: (r: Rec) => boolean }[] = [
   { value: "all", label: "全部", match: () => true },
@@ -21,7 +23,39 @@ const FILTERS: { value: Filter; label: string; match: (r: Rec) => boolean }[] = 
   { value: "offline", label: "未开播", match: (r) => ["offline", "checking", "scheduled"].includes(r.state) },
   { value: "paused", label: "已暂停", match: (r) => r.state === "paused" },
   { value: "error", label: "异常", match: (r) => r.state === "error" },
+  { value: "notify", label: "仅提醒", match: (r) => r.only_notify_no_record },
 ];
+
+type SortMode = "custom" | "status" | "name";
+
+const SORT_OPTIONS: { value: SortMode; label: string }[] = [
+  { value: "custom", label: "自定义顺序" },
+  { value: "status", label: "直播中优先" },
+  { value: "name", label: "按主播名" },
+];
+
+/** 直播中优先: recording first, then live, then problems, then the rest — each group in saved order. */
+function statusRank(r: Rec): number {
+  if (r.state === "recording" || r.state === "reconnecting") return 0;
+  if (r.state === "live") return 1;
+  if (r.state === "error") return 2;
+  return 3;
+}
+
+/** A card or row that can be dragged to a new place (only while the sort is 自定义顺序). */
+function SortableItem({ id, enabled, children }: { id: string; enabled: boolean; children: React.ReactNode }) {
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: !enabled });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={cx(enabled && "cursor-grab touch-none", isDragging && "relative z-20 cursor-grabbing opacity-90 [&>*]:shadow-2xl")}
+      {...listeners}
+    >
+      {children}
+    </div>
+  );
+}
 
 function readPref<T extends string>(key: string, fallback: T): T {
   try {
@@ -56,6 +90,7 @@ export function RoomsPage() {
   const [platform, setPlatform] = useState("all");
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"grid" | "list">(() => readPref("sc-view", "grid"));
+  const [sortMode, setSortMode] = useState<SortMode>(() => readPref("sc-sort", "custom"));
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Rec | null>(null);
@@ -67,10 +102,11 @@ export function RoomsPage() {
   useEffect(() => {
     try {
       localStorage.setItem("sc-view", view);
+      localStorage.setItem("sc-sort", sortMode);
     } catch {
       /* storage unavailable */
     }
-  }, [view]);
+  }, [view, sortMode]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -99,12 +135,34 @@ export function RoomsPage() {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     const match = FILTERS.find((f) => f.value === filter)!.match;
-    return all
+    const list = all
       .filter(match)
       .filter((r) => platform === "all" || r.platform_key === platform)
-      .filter((r) => !q || [r.name, r.live_title, r.url].some((s) => s?.toLowerCase().includes(q)))
-      .sort((a, b) => STATE_META[a.state].order - STATE_META[b.state].order);
-  }, [all, filter, platform, query]);
+      .filter((r) => !q || [r.name, r.live_title, r.url].some((s) => s?.toLowerCase().includes(q)));
+    // `all` is in the saved order; the other modes sort stably on top of it.
+    if (sortMode === "status") list.sort((a, b) => statusRank(a) - statusRank(b));
+    else if (sortMode === "name") list.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+    return list;
+  }, [all, filter, platform, query, sortMode]);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const draggable = sortMode === "custom";
+
+  // Moves the dragged room among the visible ones; rooms hidden by a filter keep their places.
+  function onDragEnd({ active, over }: DragEndEvent) {
+    if (!over || active.id === over.id) return;
+    const ids = visible.map((r) => r.id);
+    const moved = arrayMove(ids, ids.indexOf(String(active.id)), ids.indexOf(String(over.id)));
+    const shown = new Set(ids);
+    let k = 0;
+    const prev = order;
+    const next = order.map((id) => (shown.has(id) ? moved[k++] : id));
+    useStore.setState({ order: next });
+    api.reorder(next).catch((e: Error) => {
+      useStore.setState({ order: prev });
+      toast.error(`顺序没保存：${e.message}`);
+    });
+  }
 
   const recording = all.filter((r) => r.state === "recording");
   const totalSpeed = recording.reduce((s, r) => s + r.stats.speed_bps, 0);
@@ -157,7 +215,7 @@ export function RoomsPage() {
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[22px] font-semibold tracking-[-0.02em]">直播间</h1>
-          <p className="mt-1 text-[13px] text-fg-3">开播自动录制，原画直存不转码</p>
+          <p className="mt-1 text-[13px] text-fg-3">开播自动录制，原画直存不转码；也可以只提醒不录制</p>
         </div>
         <Button
           variant="primary"
@@ -194,7 +252,7 @@ export function RoomsPage() {
         <Segmented
           value={filter}
           onChange={setFilter}
-          options={FILTERS.map((f) => ({
+          options={FILTERS.filter((f) => f.value !== "notify" || counts.notify > 0 || filter === "notify").map((f) => ({
             value: f.value,
             label: (
               <>
@@ -217,6 +275,12 @@ export function RoomsPage() {
               options={[{ value: "all", label: "全部平台" }, ...platforms.map(([value, label]) => ({ value, label }))]}
             />
           )}
+          <Select
+            value={sortMode}
+            onChange={(v) => setSortMode(v as SortMode)}
+            options={SORT_OPTIONS}
+            title={draggable ? "拖动卡片调整顺序，会一直保持" : undefined}
+          />
           <Segmented
             value={view}
             onChange={setView}
@@ -240,18 +304,30 @@ export function RoomsPage() {
         ) : visible.length === 0 ? (
           <div className="rounded-xl border border-dashed border-line py-16 text-center text-[13px] text-fg-3">没有符合条件的直播间</div>
         ) : view === "grid" ? (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-4">
-            {visible.map((r) => (
-              <ItemComp key={r.id} r={r} selected={selected.has(r.id)} onSelect={toggle} onEdit={onEdit} onDelete={onDelete} />
-            ))}
-          </div>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+            <SortableContext items={visible.map((r) => r.id)} strategy={rectSortingStrategy}>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-4">
+                {visible.map((r) => (
+                  <SortableItem key={r.id} id={r.id} enabled={draggable}>
+                    <ItemComp r={r} selected={selected.has(r.id)} onSelect={toggle} onEdit={onEdit} onDelete={onDelete} />
+                  </SortableItem>
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
         ) : (
           <div className="@container overflow-x-auto rounded-xl border border-line bg-surface">
             <div className="min-w-[720px]">
               <RowHeader />
-              {visible.map((r) => (
-                <ItemComp key={r.id} r={r} selected={selected.has(r.id)} onSelect={toggle} onEdit={onEdit} onDelete={onDelete} />
-              ))}
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+                <SortableContext items={visible.map((r) => r.id)} strategy={verticalListSortingStrategy}>
+                  {visible.map((r) => (
+                    <SortableItem key={r.id} id={r.id} enabled={draggable}>
+                      <ItemComp r={r} selected={selected.has(r.id)} onSelect={toggle} onEdit={onEdit} onDelete={onDelete} />
+                    </SortableItem>
+                  ))}
+                </SortableContext>
+              </DndContext>
             </div>
           </div>
         )}
@@ -311,7 +387,7 @@ function EmptyRooms({ onAdd }: { onAdd: () => void }) {
       </div>
       <h2 className="text-[16px] font-semibold">还没有直播间</h2>
       <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-fg-3">
-        支持抖音和 B 站。添加后开播会自动开始录制，断流会自动重连，同一场直播结束后合并成一个文件。
+        支持抖音和 B 站。添加后开播会自动开始录制，断流会自动重连，同一场直播结束后合并成一个文件。也可以设为「仅开播提醒」，只提醒不录制。
       </p>
       <Button variant="primary" className="mt-6" icon={<Plus className="size-4" />} onClick={onAdd}>
         添加第一个直播间

@@ -154,15 +154,18 @@ export function Select({
   onChange,
   options,
   className,
+  title,
 }: {
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
   className?: string;
+  title?: string;
 }) {
   return (
     <select
       value={value}
+      title={title}
       onChange={(e) => onChange(e.target.value)}
       className={cx(
         "h-8.5 rounded-lg border border-line bg-surface px-2.5 pr-7 text-[13px] text-fg focus:outline-none",
