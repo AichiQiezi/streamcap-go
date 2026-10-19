@@ -73,6 +73,31 @@ func Probe(ctx context.Context, file string) (Info, error) {
 	return Info{Width: s.Width, Height: s.Height, FPS: parseRate(s.AvgFrameRate), Codec: s.CodecName}, nil
 }
 
+// Duration reads a finished file's playing time.
+func Duration(ctx context.Context, file string) (time.Duration, error) {
+	_, ffprobe := recorder.Binaries()
+	if ffprobe == "" {
+		return 0, fmt.Errorf("ffprobe not found")
+	}
+	if err := acquire(ctx); err != nil {
+		return 0, err
+	}
+	defer release()
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", file)
+	hide(cmd)
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, err
+	}
+	sec, err := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
+	if err != nil || sec <= 0 {
+		return 0, fmt.Errorf("no duration for %s", file)
+	}
+	return time.Duration(sec * float64(time.Second)), nil
+}
+
 // Thumbnail writes a 640px-wide JPEG of a frame near the end of file to dest (atomically).
 func Thumbnail(ctx context.Context, file, dest string) error {
 	ffmpeg, _ := recorder.Binaries()

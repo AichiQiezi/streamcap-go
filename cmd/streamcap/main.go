@@ -33,6 +33,7 @@ import (
 	"github.com/AichiQiezi/streamcap-go/internal/desktop"
 	"github.com/AichiQiezi/streamcap-go/internal/monitor"
 	"github.com/AichiQiezi/streamcap-go/internal/notify"
+	"github.com/AichiQiezi/streamcap-go/internal/platform"
 	_ "github.com/AichiQiezi/streamcap-go/internal/platform/bilibili"
 	_ "github.com/AichiQiezi/streamcap-go/internal/platform/douyin"
 	"github.com/AichiQiezi/streamcap-go/internal/recorder"
@@ -103,6 +104,8 @@ func main() {
 
 	if !*headless {
 		notify.SystemNotifier = desktop.Notify
+		// Douyin comments only come from a page the app runs itself (see internal/desktop).
+		platform.OpenWatcher = desktop.OpenWatcher
 	}
 	windowMode := !*browser && !*headless
 	app := &lifecycle{m: m, done: make(chan struct{}), window: windowMode}

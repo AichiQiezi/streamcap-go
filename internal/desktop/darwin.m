@@ -2,10 +2,12 @@
 
 #import <Cocoa/Cocoa.h>
 #import <UserNotifications/UserNotifications.h>
+#import <WebKit/WebKit.h>
 #import <objc/runtime.h>
 #include "darwin.h"
 
 extern void goQuitRequested(void);
+extern void goDanmakuFrame(long long wid, const void *data, int len);
 
 static NSWindow *scWindow = nil;
 
@@ -197,4 +199,203 @@ char *sc_notify(const char *title, const char *body, const char *url) {
         return dupError(@"发送通知超时");
     }
     return failure ? dupError(failure) : NULL;
+}
+
+// ---- hidden live-page watcher ----------------------------------------------------------------
+
+// The page's own script produces the signature that douyin's comment websocket requires, so the
+// only way to follow comments without forging it is to run the page and forward the frames it
+// receives. This is a small, read-only "browser extension": the wrapper below never sends anything
+// on the page's behalf, and heartbeats stay the page's business.
+static NSString *const scWatcherUA =
+    @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
+
+// Blocks the video segments themselves (the page still gets its APIs, avatars and scripts).
+static NSString *const scNoVideoRules =
+    @"[{\"trigger\":{\"url-filter\":\"\\\\.(flv|m3u8|ts|m4s)\"},\"action\":{\"type\":\"block\"}}]";
+
+// AtDocumentStart: wrap window.WebSocket, forward frames of the comment connection as base64, and
+// keep all media muted. Read-only: nothing is modified or sent.
+static NSString *const scWatcherJS =
+    @"(function(){\n"
+    @"  var W = window.WebSocket;\n"
+    @"  if (!W || W.__scWrapped) return;\n"
+    @"  function b64(buf){ var b=new Uint8Array(buf), s='', n=0x8000;\n"
+    @"    for (var i=0;i<b.length;i+=n) s+=String.fromCharCode.apply(null,b.subarray(i,i+n));\n"
+    @"    return btoa(s); }\n"
+    @"  function send(d){ try{\n"
+    @"      if (d instanceof ArrayBuffer) window.webkit.messageHandlers.streamcapDanmaku.postMessage(b64(d));\n"
+    @"      else if (typeof Blob!=='undefined' && d instanceof Blob)\n"
+    @"        d.arrayBuffer().then(function(x){ window.webkit.messageHandlers.streamcapDanmaku.postMessage(b64(x)); });\n"
+    @"    }catch(e){} }\n"
+    @"  function Wrapped(url, protocols){\n"
+    @"    var ws = protocols===undefined ? new W(url) : new W(url, protocols);\n"
+    @"    try{ if (String(url).indexOf('/webcast/im/push/v2/')>=0)\n"
+    @"      ws.addEventListener('message', function(ev){ send(ev.data); }); }catch(e){}\n"
+    @"    return ws; }\n"
+    @"  Wrapped.prototype = W.prototype;\n"
+    @"  Wrapped.CONNECTING=W.CONNECTING; Wrapped.OPEN=W.OPEN; Wrapped.CLOSING=W.CLOSING; Wrapped.CLOSED=W.CLOSED;\n"
+    @"  Wrapped.__scWrapped = true; window.WebSocket = Wrapped;\n"
+    @"  function mute(m){ try{ m.muted=true; }catch(e){} }\n"
+    @"  function scan(){ var l=document.querySelectorAll('video,audio'); for (var i=0;i<l.length;i++) mute(l[i]); }\n"
+    @"  try{ new MutationObserver(scan).observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}\n"
+    @"  document.addEventListener('DOMContentLoaded', scan);\n"
+    @"})();";
+
+@interface SCWatcher : NSObject <WKScriptMessageHandler, WKNavigationDelegate>
+@property (nonatomic) long long wid;
+@property (nonatomic, strong) NSURL *url;
+@property (nonatomic, strong) WKWebView *webView;
+@property (nonatomic, strong) NSWindow *window;
+@property (nonatomic, strong) NSTimer *timer;
+@property (nonatomic, strong) NSDate *lastFrame;
+@property (nonatomic, strong) NSDate *loadedAt;
+@property (nonatomic) BOOL closed;
+@end
+
+static NSMutableDictionary<NSNumber *, SCWatcher *> *scWatchers(void) {
+    static NSMutableDictionary *d;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ d = [NSMutableDictionary new]; });
+    return d;
+}
+
+@implementation SCWatcher
+
+- (void)start {
+    // Compiling is cached by identifier, so concurrent watchers share one list.
+    [[WKContentRuleListStore defaultStore]
+        compileContentRuleListForIdentifier:@"streamcap-no-video-v1"
+                     encodedContentRuleList:scNoVideoRules
+                          completionHandler:^(WKContentRuleList *rules, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self installWithRules:rules]; });
+    }];
+}
+
+- (void)installWithRules:(WKContentRuleList *)rules {
+    if (self.closed) return;
+    WKWebViewConfiguration *cfg = [[WKWebViewConfiguration alloc] init];
+    cfg.websiteDataStore = [WKWebsiteDataStore nonPersistentDataStore]; // no account state at all
+    cfg.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
+    if (rules) [cfg.userContentController addContentRuleList:rules];
+    [cfg.userContentController addScriptMessageHandler:self name:@"streamcapDanmaku"];
+    [cfg.userContentController addUserScript:[[WKUserScript alloc]
+        initWithSource:scWatcherJS
+         injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+      forMainFrameOnly:YES]];
+
+    // Off the visible area, but ordered in and at a normal size: at size 0 (or minimized) the page
+    // stops working. Borderless, transparent to the mouse, out of the window menu.
+    NSRect frame = NSMakeRect(-4000, -4000, 1280, 800);
+    self.window = [[NSWindow alloc] initWithContentRect:frame
+                                              styleMask:NSWindowStyleMaskBorderless
+                                                backing:NSBackingStoreBuffered
+                                                  defer:NO];
+    self.window.releasedWhenClosed = NO;
+    self.window.opaque = NO;
+    self.window.backgroundColor = [NSColor clearColor];
+    self.window.hasShadow = NO;
+    self.window.ignoresMouseEvents = YES;
+    self.window.excludedFromWindowsMenu = YES;
+    self.window.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorTransient;
+
+    self.webView = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 1280, 800) configuration:cfg];
+    self.webView.customUserAgent = scWatcherUA;
+    self.webView.navigationDelegate = self;
+    self.webView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [self.window.contentView addSubview:self.webView];
+    [self.window orderFrontRegardless];
+    self.loadedAt = [NSDate date];
+    [self.webView loadRequest:[NSURLRequest requestWithURL:self.url]];
+
+    // Douyin sends a heartbeat frame well within this window; a long silence means a dead page.
+    self.timer = [NSTimer scheduledTimerWithTimeInterval:20 target:self selector:@selector(tick) userInfo:nil repeats:YES];
+}
+
+- (void)tick {
+    if (self.closed) return;
+    NSDate *since = self.lastFrame ?: self.loadedAt;
+    if (since && [[NSDate date] timeIntervalSinceDate:since] > 120) {
+        NSLog(@"StreamCap: no danmaku frames for 2 minutes, reloading %@", self.url);
+        self.loadedAt = [NSDate date];
+        [self.webView reload];
+    }
+}
+
+- (void)reloadSoon {
+    if (self.closed) return;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        if (!self.closed) {
+            self.loadedAt = [NSDate date];
+            [self.webView reload];
+        }
+    });
+}
+
+- (void)shutdown {
+    if (self.closed) return;
+    self.closed = YES;
+    [self.timer invalidate];
+    self.timer = nil;
+    [self.webView.configuration.userContentController removeScriptMessageHandlerForName:@"streamcapDanmaku"];
+    [self.webView stopLoading];
+    self.webView.navigationDelegate = nil;
+    [self.webView removeFromSuperview];
+    self.webView = nil;
+    [self.window orderOut:nil];
+    self.window = nil;
+}
+
+// ---- WKScriptMessageHandler ----
+
+- (void)userContentController:(WKUserContentController *)controller didReceiveScriptMessage:(WKScriptMessage *)message {
+    if (self.closed) return;
+    if (![message.body isKindOfClass:[NSString class]]) return;
+    NSData *data = [[NSData alloc] initWithBase64EncodedString:(NSString *)message.body options:0];
+    if (data.length == 0) return;
+    self.lastFrame = [NSDate date];
+    goDanmakuFrame(self.wid, data.bytes, (int)data.length);
+}
+
+// ---- WKNavigationDelegate ----
+
+- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
+    self.loadedAt = [NSDate date];
+}
+
+- (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error {
+    [self reloadSoon];
+}
+
+- (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
+    [self reloadSoon];
+}
+
+- (void)webViewWebContentProcessDidTerminate:(WKWebView *)webView {
+    [self reloadSoon];
+}
+
+@end
+
+void sc_watcher_open(const char *url, long long wid) {
+    NSString *s = [NSString stringWithUTF8String:url];
+    if (s.length == 0) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSURL *u = [NSURL URLWithString:s];
+        if (!u) return;
+        SCWatcher *w = [[SCWatcher alloc] init];
+        w.wid = wid;
+        w.url = u;
+        scWatchers()[@(wid)] = w;
+        [w start];
+    });
+}
+
+void sc_watcher_close(long long wid) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        SCWatcher *w = scWatchers()[@(wid)];
+        if (!w) return;
+        [scWatchers() removeObjectForKey:@(wid)];
+        [w shutdown];
+    });
 }

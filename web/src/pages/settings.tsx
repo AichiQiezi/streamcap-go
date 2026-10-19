@@ -108,6 +108,10 @@ function sections(qualities: { value: string; label: string }[], formats: string
         { key: "platform_max_concurrent", label: "同平台并发检测数", kind: "number", hint: "同一平台同时检测的直播间数量上限" },
         { key: "segmented_recording_enabled", label: "分段录制", kind: "switch", hint: "按时长切分文件" },
         { key: "video_segment_time", label: "分段时长", kind: "number", suffix: "秒", when: (v) => Boolean(v.segmented_recording_enabled) },
+        {
+          key: "record_danmaku", label: "录制弹幕", kind: "switch",
+          hint: "录制 B站 / 抖音直播时同时保存弹幕，下播后在视频旁生成同名 .ass 文件。用 IINA、mpv、PotPlayer、VLC 打开视频会自动显示弹幕，可随时开关。抖音需要在窗口或托盘 / 菜单栏模式下运行（-headless 时不可用）",
+        },
         { key: "default_live_source", label: "优先直播源", kind: "segmented", options: [{ value: "FLV", label: "FLV" }, { value: "HLS", label: "HLS" }], hint: "仅对抖音、TikTok 生效；h265 流会自动改用 HLS" },
         { key: "recording_space_threshold", label: "磁盘空间下限", kind: "number", suffix: "GB", hint: "可用空间低于该值时暂停新的录制" },
       ],

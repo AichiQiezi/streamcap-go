@@ -100,6 +100,7 @@ func DefaultSettings() Settings {
 		"video_format":                "TS",
 		"loop_time_seconds":           "120",
 		"resume_wait_minutes":         "10",
+		"record_danmaku":              true,
 		"platform_max_concurrent":     "2",
 		"segmented_recording_enabled": false,
 		"video_segment_time":          "1800",

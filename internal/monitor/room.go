@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AichiQiezi/streamcap-go/internal/danmaku"
 	"github.com/AichiQiezi/streamcap-go/internal/media"
 	"github.com/AichiQiezi/streamcap-go/internal/notify"
 	"github.com/AichiQiezi/streamcap-go/internal/platform"
@@ -114,17 +115,46 @@ type session struct {
 	anchor    string
 	title     string
 	key       string // journal key (crash recovery)
+
+	dm      *dmRecorder // comments, when recorded (see danmaku.go)
+	dmParts []partFiles // each part's files and data start, to line the comments up
+}
+
+// dataTimes records when a part's file first and last grew, on the local clock.
+type dataTimes struct {
+	mu          sync.Mutex
+	first, last time.Time
+	bytes       int64
+}
+
+func (f *dataTimes) mark(p recorder.Progress) {
+	f.mu.Lock()
+	if p.Bytes > f.bytes {
+		now := time.Now()
+		if f.first.IsZero() {
+			f.first = now
+		}
+		f.last, f.bytes = now, p.Bytes
+	}
+	f.mu.Unlock()
+}
+
+func (f *dataTimes) get() (first, last time.Time) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.first, f.last
 }
 
 type runtime struct {
 	m  *Manager
 	id string
 
-	mu    sync.Mutex
-	st    State
-	sess  *session
-	part  *recorder.Part
-	thumb struct {
+	mu     sync.Mutex
+	st     State
+	sess   *session
+	part   *recorder.Part
+	firsts map[*recorder.Part]*dataTimes // per part: a URL hand-over overlaps two parts
+	thumb  struct {
 		busy   bool
 		at     time.Time
 		probed string
@@ -492,9 +522,9 @@ func (rt *runtime) beginSession(room store.Room, info *platform.StreamInfo, s st
 	rt.update(func(st *State) {
 		st.SessionStart, st.Recorded, st.Bytes, st.Reconnects, st.Dir, st.LastError = now, 0, 0, 0, dir, ""
 	})
+	rt.sess.dm = rt.startDanmaku(room, s, dir, base)
 }
 
-// endSession closes the current session: finalisation (merge/remux) runs in the background.
 // closeSession ends the recording session, if any, counting its time towards the live.
 func (rt *runtime) closeSession(why string) {
 	if d := rt.endSession(why); rt.watch != nil {
@@ -530,6 +560,9 @@ func (rt *runtime) endSession(why string) time.Duration {
 	room, _ := rt.m.room(rt.id)
 	s := rt.m.Settings()
 	slog.Info("session ended", "room", room.URL, "why", why, "parts", sess.parts, "recorded", sess.recorded.Round(time.Second))
+	if sess.dm != nil {
+		sess.dm.stop()
+	}
 	if len(sess.files) == 0 {
 		rt.m.journalDelete(sess.key)
 		return sess.recorded
@@ -540,17 +573,37 @@ func (rt *runtime) endSession(why string) time.Duration {
 		DeleteOriginal: s.Bool("delete_original"),
 	}
 	rt.m.finalizeWG.Add(1)
+	snap := rt.snapshot()
 	go func() {
 		defer rt.m.finalizeWG.Done()
-		out := recorder.Finalize(context.Background(), sess.files, sess.format, sess.segmented, opt)
+		ctx := context.Background()
+		// Measure the parts before finalising: merging can delete them.
+		var windows [][]danmaku.Window
+		if sess.dm != nil && sess.dm.w.Count() > 0 {
+			windows = fileWindows(ctx, sess.dmParts)
+		}
+		out := recorder.Finalize(ctx, sess.files, sess.format, sess.segmented, opt)
 		rt.m.journalDelete(sess.key)
+		note := ""
+		if windows != nil {
+			if n := writeDanmakuASS(sess.dm.path, windows, out, snap.Width, snap.Height); n > 0 {
+				note = fmt.Sprintf("，弹幕 %d 条", n)
+			}
+		}
 		if len(out) == 1 {
-			rt.m.toast("「%s」本场录制已保存（%s，%d 段%s）", sess.anchor, sess.recorded.Round(time.Second), sess.parts, mergedNote(sess.parts, opt.Merge && !sess.segmented))
+			rt.m.toast("「%s」本场录制已保存（%s，%d 段%s%s）", sess.anchor, sess.recorded.Round(time.Second), sess.parts, mergedNote(sess.parts, opt.Merge && !sess.segmented), note)
 		} else if len(out) > 1 {
-			rt.m.toast("「%s」本场录制已保存为 %d 个文件", sess.anchor, len(out))
+			rt.m.toast("「%s」本场录制已保存为 %d 个文件%s", sess.anchor, len(out), note)
 		}
 	}()
 	return sess.recorded
+}
+
+func minTime(a, b time.Time) time.Time {
+	if b.Before(a) {
+		return b
+	}
+	return a
 }
 
 func mergedNote(parts int, merged bool) string {
@@ -644,10 +697,20 @@ func (rt *runtime) startPart(room store.Room, info *platform.StreamInfo, s store
 		Segment: sess.segmented, SegmentSec: room.SegmentSec, BitrateK: room.BitrateK,
 		Dir: sess.dir, BaseName: base,
 	}
-	part, err := recorder.Start(job, func(p recorder.Progress) { rt.onProgress(p) })
+	first := &dataTimes{}
+	part, err := recorder.Start(job, func(p recorder.Progress) {
+		first.mark(p)
+		rt.onProgress(p)
+	})
 	if err != nil {
 		return nil, err
 	}
+	rt.mu.Lock()
+	if rt.firsts == nil {
+		rt.firsts = map[*recorder.Part]*dataTimes{}
+	}
+	rt.firsts[part] = first
+	rt.mu.Unlock()
 	rt.setPart(part)
 	slog.Info("recording", "room", room.URL, "quality", info.Quality, "part", sess.parts, "dir", sess.dir)
 	return part, nil
@@ -665,8 +728,23 @@ func (rt *runtime) setPart(p *recorder.Part) {
 // finishPart waits for p and folds its result into the session.
 func (rt *runtime) finishPart(p *recorder.Part) recorder.Result {
 	res := p.Wait()
+	rt.mu.Lock()
+	first := rt.firsts[p]
+	delete(rt.firsts, p)
+	rt.mu.Unlock()
 	sess := rt.sess
 	if sess != nil {
+		if len(res.Files) > 0 {
+			pf := partFiles{files: res.Files, dataAt: res.Started, endAt: res.Ended}
+			if first != nil {
+				if f, l := first.get(); !f.IsZero() {
+					// Progress is sampled every couple of seconds; a part that stalled before ending
+					// stopped getting data at its last growth, not when ffmpeg was finally stopped.
+					pf.dataAt, pf.endAt = f, minTime(res.Ended, l.Add(recorder.SampleEvery))
+				}
+			}
+			sess.dmParts = append(sess.dmParts, pf)
+		}
 		sess.files = append(sess.files, res.Files...)
 		sess.bytes += res.Bytes
 		if res.Bytes > 0 {

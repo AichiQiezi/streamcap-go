@@ -10,4 +10,10 @@ void sc_show(void);
 // a malloc'd message the caller frees. Requires running from an .app bundle.
 char *sc_notify(const char *title, const char *body, const char *url);
 
+// Opens url in an off-screen WKWebView and forwards every frame of the page's comment websocket to
+// goDanmakuFrame(id, base64). Runs on the main thread's run loop, so the app must have one.
+void sc_watcher_open(const char *url, long long id);
+// Closes and releases the watcher (safe from any thread; ignored when it never opened).
+void sc_watcher_close(long long id);
+
 #endif

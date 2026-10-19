@@ -54,7 +54,12 @@ export function PlayerDialog({ file, onClose }: { file: MediaFile | null; onClos
       open={!!file}
       onOpenChange={(o) => !o && onClose()}
       title={<span className="block max-w-[760px] truncate">{file?.name}</span>}
-      description={file ? `${file.folder || "根目录"} · ${bytes(file.size)} · ${file.ext.toUpperCase()}` : undefined}
+      description={
+        file
+          ? `${file.folder || "根目录"} · ${bytes(file.size)} · ${file.ext.toUpperCase()}` +
+            (file.danmaku ? " · 有弹幕文件，这里不显示，用 IINA / mpv / PotPlayer 打开可看弹幕" : "")
+          : undefined
+      }
       width={1000}
       footer={
         file && (

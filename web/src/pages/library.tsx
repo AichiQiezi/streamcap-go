@@ -2,7 +2,7 @@ import { ArrowDown, ArrowUp, FileAudio, FileVideo, Film, FolderOpen, Play, Refre
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PlayerDialog } from "@/components/player";
-import { Button, Confirm, cx, IconButton, Input, Select } from "@/components/ui";
+import { Button, Confirm, cx, IconButton, Input, Select, Tip } from "@/components/ui";
 import { api } from "@/lib/api";
 import { ago, bytes } from "@/lib/format";
 import { platformColor, platformName } from "@/lib/platforms";
@@ -270,6 +270,11 @@ export function LibraryPage() {
                     {d.title && <span className="text-fg-2"> · {d.title}</span>}
                   </span>
                   <span className="shrink-0 rounded border border-line px-1 font-mono text-[10.5px] text-fg-3 uppercase">{f.ext}</span>
+                  {f.danmaku && (
+                    <Tip label="有同名 .ass 弹幕文件：用 IINA、mpv、PotPlayer、VLC 播放会显示弹幕（应用内播放器不显示）">
+                      <span className="shrink-0 rounded bg-live/12 px-1.5 text-[10.5px] font-medium text-live">弹幕</span>
+                    </Tip>
+                  )}
                   {d.tags.map((t) => (
                     <span key={t} className="shrink-0 rounded bg-surface-3 px-1 font-mono text-[10.5px] text-fg-2" title={t.startsWith("p") ? "断流重连后的续录部分" : "分段录制的分段"}>
                       {t}

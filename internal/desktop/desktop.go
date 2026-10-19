@@ -27,6 +27,15 @@ var ErrUnsupported = errors.New("native window not supported on this platform")
 // ErrNoWebView means the platform's web view runtime is missing (WebView2 on old Windows 10).
 var ErrNoWebView = errors.New("web view runtime not available")
 
+// OpenWatcher opens url in a hidden browser page and forwards every raw frame of the page's
+// comment websocket to onFrame. It returns a function that closes the page. It is nil on platforms
+// without a usable web view (Linux), and in -headless mode there is no run loop, so callers must
+// not use it there either.
+var OpenWatcher func(url string, onFrame func([]byte)) (close func())
+
+// WatcherSupported reports whether this build can run the hidden page watcher.
+func WatcherSupported() bool { return OpenWatcher != nil }
+
 // Options configure the shell.
 type Options struct {
 	URL      string

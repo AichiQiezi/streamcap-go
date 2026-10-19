@@ -31,6 +31,9 @@ var StallTimeout = 45 * time.Second
 
 const sampleEvery = 2 * time.Second
 
+// SampleEvery is how often a part reports progress (so how stale its "last data" time can be).
+const SampleEvery = sampleEvery
+
 // Job describes one ffmpeg run.
 type Job struct {
 	URL        string

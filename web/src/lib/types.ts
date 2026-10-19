@@ -82,6 +82,8 @@ export interface MediaFile {
   mtime: number;
   kind: "audio" | "video";
   ext: string;
+  /** a same-named .ass comment track sits next to the file */
+  danmaku?: boolean;
 }
 
 export type SettingsValues = Record<string, unknown>;

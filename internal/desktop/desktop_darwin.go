@@ -4,7 +4,7 @@ package desktop
 
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
-#cgo LDFLAGS: -framework Cocoa -framework UserNotifications
+#cgo LDFLAGS: -framework Cocoa -framework UserNotifications -framework WebKit
 #include <stdlib.h>
 #include "darwin.h"
 */
@@ -144,4 +144,49 @@ end run`
 		return fmt.Errorf("osascript: %v %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// ---- hidden page watcher ----
+
+var watcherMu sync.Mutex
+var watchers = map[int64]func([]byte){}
+var watcherSeq int64
+
+//export goDanmakuFrame
+func goDanmakuFrame(wid C.longlong, data unsafe.Pointer, n C.int) {
+	if n <= 0 {
+		return
+	}
+	watcherMu.Lock()
+	fn := watchers[int64(wid)]
+	watcherMu.Unlock()
+	if fn != nil {
+		fn(C.GoBytes(data, n))
+	}
+}
+
+// openWatcher is the macOS implementation: an off-screen WKWebView with a script injected before
+// the page loads (see darwin.m). Only available when the app has a run loop, i.e. window / menu-bar
+// mode; -headless leaves it nil.
+func init() {
+	OpenWatcher = openWatcher
+}
+
+func openWatcher(url string, onFrame func([]byte)) func() {
+	// The view is created on the main queue, which the app's run loop services; a call made before
+	// the loop starts (a room already live at launch) is simply queued.
+	cu := C.CString(url)
+	defer C.free(unsafe.Pointer(cu))
+	watcherMu.Lock()
+	watcherSeq++
+	id := watcherSeq
+	watchers[id] = onFrame
+	watcherMu.Unlock()
+	C.sc_watcher_open(cu, C.longlong(id))
+	return func() {
+		watcherMu.Lock()
+		delete(watchers, id)
+		watcherMu.Unlock()
+		C.sc_watcher_close(C.longlong(id))
+	}
 }

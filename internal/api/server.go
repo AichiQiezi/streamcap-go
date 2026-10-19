@@ -398,6 +398,15 @@ type fileJSON struct {
 	Mtime  float64 `json:"mtime"`
 	Kind   string  `json:"kind"`
 	Ext    string  `json:"ext"`
+	// Danmaku: a same-named .ass comment track sits next to the file.
+	Danmaku bool `json:"danmaku"`
+}
+
+// danmakuSiblings are the comment files that belong to a video: the .ass players load, and the raw
+// comments it was made from.
+func danmakuSiblings(video string) []string {
+	stem := strings.TrimSuffix(video, filepath.Ext(video))
+	return []string{stem + ".ass", stem + ".danmaku.jsonl"}
 }
 
 func (s *Server) listFiles(w http.ResponseWriter, _ *http.Request) {
@@ -426,9 +435,10 @@ func (s *Server) listFiles(w http.ResponseWriter, _ *http.Request) {
 		if folder == "." {
 			folder = ""
 		}
+		_, assErr := os.Stat(danmakuSiblings(p)[0])
 		files = append(files, fileJSON{
 			Path: rel, Name: name, Folder: folder, Size: info.Size(),
-			Mtime: float64(info.ModTime().UnixNano()) / 1e9, Kind: kind, Ext: ext[1:],
+			Mtime: float64(info.ModTime().UnixNano()) / 1e9, Kind: kind, Ext: ext[1:], Danmaku: assErr == nil,
 		})
 		return nil
 	})
@@ -490,6 +500,9 @@ func (s *Server) deleteFile(w http.ResponseWriter, r *http.Request) {
 	if err := os.Remove(full); err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	for _, f := range danmakuSiblings(full) {
+		_ = os.Remove(f) // none for most files
 	}
 	writeJSON(w, map[string]bool{"ok": true})
 }

@@ -110,6 +110,40 @@ type UnsupportedError struct{ Reason string }
 func (e *UnsupportedError) Error() string        { return e.Reason }
 func (e *UnsupportedError) Is(target error) bool { return target == ErrUnsupported }
 
+// Danmaku is one viewer comment as it arrived.
+type Danmaku struct {
+	At    time.Time // when it reached us, on the local clock that also times the recording
+	User  string
+	Text  string
+	Color uint32 // 0xRRGGBB
+	Mode  int    // DanmakuScroll, DanmakuBottom or DanmakuTop
+}
+
+// Danmaku display modes (Bilibili's numbering).
+const (
+	DanmakuScroll = 1
+	DanmakuBottom = 4
+	DanmakuTop    = 5
+)
+
+// DanmakuSource is implemented by resolvers that can follow a live room's comments. Danmaku blocks,
+// reconnecting as needed, and calls emit for each comment until ctx is done.
+type DanmakuSource interface {
+	Danmaku(ctx context.Context, roomURL string, opt Options, emit func(Danmaku)) error
+}
+
+// DanmakuReady is optionally implemented by a DanmakuSource that needs extra facilities. When it
+// returns false, comments are skipped instead of starting a source that cannot work.
+type DanmakuReady interface {
+	DanmakuReady() bool
+}
+
+// OpenWatcher opens url in a hidden browser page and passes every raw frame of the page's comment
+// websocket to onFrame. It returns a function that closes the page. It is injected by main (the
+// desktop package implements it with WKWebView on macOS and WebView2 on Windows); nil means no
+// page watcher is available.
+var OpenWatcher func(url string, onFrame func([]byte)) (close func())
+
 // Canonical is a room link as it should be stored, plus the streamer's identity.
 type Canonical struct {
 	URL   string // may be the link as given, when it's the more durable form
