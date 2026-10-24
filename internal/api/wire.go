@@ -35,6 +35,7 @@ type recJSON struct {
 	MonitorHours       *string   `json:"monitor_hours"`
 	EnabledMessagePush bool      `json:"enabled_message_push"`
 	OnlyNotifyNoRecord bool      `json:"only_notify_no_record"`
+	AutoUpload         bool      `json:"auto_upload"`
 	FlvDirect          bool      `json:"flv_use_direct_download"`
 	CheckedAt          *string   `json:"checked_at"`
 	LastError          *string   `json:"last_error"`
@@ -71,6 +72,7 @@ func toJSON(v monitor.View) recJSON {
 		Monitor: r.Monitor, IsLive: s.IsLive, IsRecording: s.Phase == monitor.PhaseRecording,
 		DurationS: int64(s.Duration().Seconds()), SegmentRecord: r.Segment, SegmentTime: strconv.Itoa(r.SegmentSec),
 		ScheduledRecording: r.Scheduled, EnabledMessagePush: r.Push, OnlyNotifyNoRecord: r.NotifyOnly,
+		AutoUpload: r.AutoUpload,
 		Reconnects: s.Reconnects,
 		Stats: statsJSON{
 			File: strPtr(s.File), SizeBytes: s.Bytes, SpeedBps: int64(s.SpeedBps),
@@ -119,6 +121,7 @@ type recInput struct {
 	MonitorHours       *string `json:"monitor_hours"`
 	EnabledMessagePush *bool   `json:"enabled_message_push"`
 	OnlyNotifyNoRecord *bool   `json:"only_notify_no_record"`
+	AutoUpload         *bool   `json:"auto_upload"`
 }
 
 func (in recInput) toRoomInput() monitor.RoomInput {
@@ -126,6 +129,7 @@ func (in recInput) toRoomInput() monitor.RoomInput {
 		URL: in.URL, Name: in.StreamerName, Quality: in.Quality, Format: in.RecordFormat,
 		Segment: in.SegmentRecord, RecordDir: in.RecordingDir, Monitor: in.MonitorStatus,
 		Scheduled: in.ScheduledRecording, Push: in.EnabledMessagePush, NotifyOnly: in.OnlyNotifyNoRecord,
+		AutoUpload: in.AutoUpload,
 	}
 	if in.VideoBitrate != nil {
 		b := *in.VideoBitrate

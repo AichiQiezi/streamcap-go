@@ -26,11 +26,13 @@ type Room struct {
 	Monitor    bool             `json:"monitor"`
 	Scheduled  bool             `json:"scheduled"`
 	// ScheduleStart is "HH:MM:SS"; ScheduleHours is how long the daily window lasts.
-	ScheduleStart string    `json:"schedule_start"`
-	ScheduleHours float64   `json:"schedule_hours"`
-	Push          bool      `json:"push"`
-	NotifyOnly    bool      `json:"notify_only"`
-	CreatedAt     time.Time `json:"created_at"`
+	ScheduleStart string  `json:"schedule_start"`
+	ScheduleHours float64 `json:"schedule_hours"`
+	Push          bool    `json:"push"`
+	NotifyOnly    bool    `json:"notify_only"`
+	// AutoUpload submits the session's files to Bilibili once the live has ended and they are saved.
+	AutoUpload bool      `json:"auto_upload,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
 
 	// Ident is the streamer's id on the site (platform.StreamInfo.Ident), to refuse adding the same
 	// streamer twice through different links. Filled at add time, or by the first successful check.
@@ -161,6 +163,14 @@ func DefaultSettings() Settings {
 		"sender_email":                      "",
 		"sender_name":                       "",
 		"recipient_email":                   "",
+
+		// Bilibili upload defaults. Templates take {anchor} {title} {date} {time} {platform} {url}.
+		"bili_upload_title":       "【直播录像】{anchor} {date} {title}",
+		"bili_upload_desc":        "{anchor} 的直播录像\n开播时间：{date} {time}\n直播间：{url}",
+		"bili_upload_tags":        "直播录像,{anchor}",
+		"bili_upload_tid":         "21",
+		"bili_upload_copyright":   "2",
+		"bili_upload_min_minutes": "10",
 	}
 }
 

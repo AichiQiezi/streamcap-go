@@ -73,6 +73,7 @@ type Manager struct {
 	diskFree    uint64
 	diskTotal   uint64
 	finalizeWG  sync.WaitGroup
+	onSaved     func(SavedSession)
 	shutdownCtx context.Context
 	shutdown    context.CancelFunc
 }
@@ -129,6 +130,19 @@ func (m *Manager) Shutdown(ctx context.Context) {
 	m.shutdown()
 	m.st.FlushAll()
 }
+
+// SavedSession is a live session whose files are finalised.
+type SavedSession struct {
+	Room   store.Room
+	Anchor string
+	Title  string
+	Start  time.Time
+	Files  []string
+}
+
+// OnSessionSaved registers fn to be called (from the finalising goroutine) after a session's files
+// are merged/remuxed. Call before Start.
+func (m *Manager) OnSessionSaved(fn func(SavedSession)) { m.onSaved = fn }
 
 // Subscribe registers an event handler.
 func (m *Manager) Subscribe(fn func(Event)) {
@@ -327,6 +341,7 @@ type RoomInput struct {
 	ScheduleHours *float64
 	Push          *bool
 	NotifyOnly    *bool
+	AutoUpload    *bool
 }
 
 // Skip explains why an added URL was rejected.
@@ -783,6 +798,9 @@ func applyInput(r *store.Room, in RoomInput) {
 	}
 	if in.NotifyOnly != nil {
 		r.NotifyOnly = *in.NotifyOnly
+	}
+	if in.AutoUpload != nil {
+		r.AutoUpload = *in.AutoUpload
 	}
 	if r.Quality == "" {
 		r.Quality = platform.QualityOD

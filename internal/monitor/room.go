@@ -615,6 +615,9 @@ func (rt *runtime) endSession(why string) time.Duration {
 				note = fmt.Sprintf("，弹幕 %d 条", n)
 			}
 		}
+		if rt.m.onSaved != nil && len(out) > 0 {
+			rt.m.onSaved(SavedSession{Room: room, Anchor: sess.anchor, Title: sess.title, Start: sess.start, Files: out})
+		}
 		if len(out) == 1 {
 			rt.m.toast("「%s」本场录制已保存（%s，%d 段%s%s）", sess.anchor, sess.recorded.Round(time.Second), sess.parts, mergedNote(sess.parts, opt.Merge && !sess.segmented), note)
 		} else if len(out) > 1 {

@@ -126,6 +126,8 @@ type Store struct {
 	Cookies  *File[map[string]string]
 	// Sessions journals live sessions whose files are not finalised yet (crash recovery).
 	Sessions *File[map[string]SessionJournal]
+	// Uploads holds the Bilibili upload account and tasks.
+	Uploads *File[UploadData]
 }
 
 // Open loads (or initialises) everything under dir.
@@ -157,12 +159,16 @@ func Open(dir string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("sessions: %w", err)
 	}
-	return &Store{Dir: dir, Rooms: rooms, Settings: settings, Cookies: cookies, Sessions: sessions}, nil
+	uploads, err := openFile(filepath.Join(dir, "uploads.json"), UploadData{Tasks: []UploadTask{}})
+	if err != nil {
+		return nil, fmt.Errorf("uploads: %w", err)
+	}
+	return &Store{Dir: dir, Rooms: rooms, Settings: settings, Cookies: cookies, Sessions: sessions, Uploads: uploads}, nil
 }
 
 // FlushAll writes every file synchronously (used on shutdown).
 func (s *Store) FlushAll() {
-	for _, fl := range []interface{ Flush() error }{s.Rooms, s.Settings, s.Cookies, s.Sessions} {
+	for _, fl := range []interface{ Flush() error }{s.Rooms, s.Settings, s.Cookies, s.Sessions, s.Uploads} {
 		if err := fl.Flush(); err != nil {
 			slog.Error("flush on shutdown failed", "err", err)
 		}

@@ -1,4 +1,4 @@
-import type { FilesResponse, Rec, RecInput, SettingsResponse, StateResponse } from "./types";
+import type { BiliAccount, FilesResponse, Partition, Rec, RecInput, SettingsResponse, StateResponse, UploadForm, UploadTask } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -58,6 +58,22 @@ export const api = {
     request<{ ok: boolean }>(`/api/files?path=${encodeURIComponent(path)}`, { method: "DELETE" }),
   revealFile: (path?: string) =>
     post<{ ok: boolean }>(`/api/files/reveal${path ? `?path=${encodeURIComponent(path)}` : ""}`),
+
+  biliAccount: () => get<{ account: BiliAccount | null }>("/api/bili/account"),
+  /** Starts a QR login: `qr` is a PNG data URL to scan with the Bilibili app. */
+  biliLogin: () => post<{ auth_code: string; qr: string }>("/api/bili/login", {}),
+  biliLoginPoll: (authCode: string) =>
+    post<{ status: "waiting" | "scanned" | "expired" | "done"; account: BiliAccount | null }>("/api/bili/login/poll", { auth_code: authCode }),
+  biliLogout: () => post<{ ok: boolean }>("/api/bili/logout", {}),
+  biliPartitions: () => get<{ partitions: Partition[] }>("/api/bili/partitions"),
+
+  uploads: () => get<{ tasks: UploadTask[] }>("/api/uploads"),
+  uploadDraft: (path: string) => get<UploadForm>(`/api/uploads/draft?path=${encodeURIComponent(path)}`),
+  /** `paths` are relative to the recordings folder, as `files()` lists them; each becomes a part (P). */
+  addUpload: (paths: string[], form: UploadForm) => post<UploadTask>("/api/uploads", { paths, ...form }),
+  retryUpload: (id: string) => post<{ ok: boolean }>(`/api/uploads/${encodeURIComponent(id)}/retry`, {}),
+  cancelUpload: (id: string) => post<{ ok: boolean }>(`/api/uploads/${encodeURIComponent(id)}/cancel`, {}),
+  removeUpload: (id: string) => request<{ ok: boolean }>(`/api/uploads/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
 
 /** Cover thumbnail for a recording, or null when no frame has been captured yet. */

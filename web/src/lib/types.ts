@@ -48,6 +48,8 @@ export interface Rec {
   monitor_hours: string | null;
   enabled_message_push: boolean;
   only_notify_no_record: boolean;
+  /** submit the session's files to Bilibili after the live */
+  auto_upload: boolean;
   flv_use_direct_download: boolean;
   checked_at: string | null;
   /** why the last check / part failed, shown while reconnecting or in error */
@@ -73,6 +75,7 @@ export interface RecInput {
   monitor_hours?: string | null;
   enabled_message_push?: boolean;
   only_notify_no_record?: boolean;
+  auto_upload?: boolean;
   flv_use_direct_download?: boolean;
 }
 
@@ -123,4 +126,52 @@ export interface SettingsResponse {
 export interface FilesResponse {
   root: string;
   files: MediaFile[];
+}
+
+/** The Bilibili account videos are submitted to. */
+export interface BiliAccount {
+  mid: number;
+  name: string;
+  face: string;
+  expires_at: string;
+}
+
+export interface Partition {
+  id: number;
+  name: string;
+  desc?: string;
+  children?: Partition[];
+}
+
+export type UploadState = "queued" | "uploading" | "submitting" | "done" | "failed" | "canceled";
+
+export interface UploadTask {
+  id: string;
+  files: string[];
+  names: string[];
+  title: string;
+  desc: string;
+  tags: string;
+  tid: number;
+  copyright: 1 | 2;
+  source: string;
+  room_id?: string;
+  state: UploadState;
+  error?: string;
+  total: number;
+  sent: number;
+  speed_bps: number;
+  bvid?: string;
+  created_at: string;
+  finished_at?: string;
+}
+
+/** The submit form's fields (POST /api/uploads, GET /api/uploads/draft). */
+export interface UploadForm {
+  title: string;
+  desc: string;
+  tags: string;
+  tid: number;
+  copyright: 1 | 2;
+  source: string;
 }

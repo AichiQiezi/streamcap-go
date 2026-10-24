@@ -39,6 +39,7 @@ import (
 	"github.com/AichiQiezi/streamcap-go/internal/recorder"
 	"github.com/AichiQiezi/streamcap-go/internal/store"
 	"github.com/AichiQiezi/streamcap-go/internal/sysutil"
+	"github.com/AichiQiezi/streamcap-go/internal/upload"
 	"github.com/AichiQiezi/streamcap-go/web"
 )
 
@@ -92,6 +93,8 @@ func main() {
 		fatal("无法启动", fmt.Sprintf("无法读取数据目录 %s：%v", *dataDir, err))
 	}
 	m := monitor.New(st, monitor.Options{DefaultSaveDir: paths.downloads, ThumbDir: filepath.Join(*dataDir, "thumbs")})
+	up := upload.New(st, m.Settings)
+	m.OnSessionSaved(func(s monitor.SavedSession) { up.SessionSaved(s.Room, s.Anchor, s.Title, s.Start, s.Files) })
 
 	loopback := isLoopback(*host)
 	if !loopback {
@@ -110,13 +113,16 @@ func main() {
 	windowMode := !*browser && !*headless
 	app := &lifecycle{m: m, done: make(chan struct{}), window: windowMode}
 	srv := &http.Server{
-		Handler: api.New(m, static, loopback, api.Hooks{
+		Handler: api.New(m, up, static, loopback, api.Hooks{
 			Show: app.show(url), Quit: app.quit, OpenNotificationSettings: desktop.OpenNotificationSettings,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	app.srv = srv
 	m.Start()
+	upCtx, stopUploads := context.WithCancel(context.Background())
+	defer stopUploads()
+	up.Start(upCtx)
 	go func() {
 		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("http server stopped", "err", err)

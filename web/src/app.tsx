@@ -1,4 +1,4 @@
-import { Check, Film, Loader2, Monitor, Moon, Power, Radio, Settings2, Sun } from "lucide-react";
+import { Check, Film, Loader2, Monitor, Moon, Power, Radio, Settings2, Sun, Upload } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Toaster, toast } from "sonner";
 import { Confirm, cx, Menu, MenuContent, MenuItem, MenuTrigger, Tip, TipProvider } from "./components/ui";
@@ -9,10 +9,12 @@ import { type ThemeMode, useTheme } from "./lib/theme";
 import { LibraryPage } from "./pages/library";
 import { RoomsPage } from "./pages/rooms";
 import { SettingsPage } from "./pages/settings";
+import { UploadsPage } from "./pages/uploads";
 
 const ROUTES = {
   rooms: { label: "直播间", icon: Radio, Page: RoomsPage },
   library: { label: "录像", icon: Film, Page: LibraryPage },
+  uploads: { label: "投稿", icon: Upload, Page: UploadsPage },
   settings: { label: "设置", icon: Settings2, Page: SettingsPage },
 } as const;
 type Route = keyof typeof ROUTES;
@@ -74,6 +76,7 @@ function Sidebar({ route }: { route: Route }) {
   const conn = useStore((s) => s.conn);
   const disk = useStore((s) => s.disk);
   const recordingCount = useStore((s) => Object.values(s.recs).filter((r) => r.state === "recording").length);
+  const uploadCount = useStore((s) => Object.values(s.uploads).filter((t) => t.state === "queued" || t.state === "uploading" || t.state === "submitting").length);
   const [quitOpen, setQuitOpen] = useState(false);
   const used = disk ? 1 - disk.free / disk.total : 0;
 
@@ -102,6 +105,12 @@ function Sidebar({ route }: { route: Route }) {
                 <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-rec/12 px-1.5 py-px font-mono text-[11px] font-medium text-rec tabular max-lg:absolute max-lg:-top-1 max-lg:-right-1 max-lg:px-1">
                   <span className="size-1.5 rounded-full bg-rec animate-rec" />
                   {recordingCount}
+                </span>
+              )}
+              {key === "uploads" && uploadCount > 0 && (
+                <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-surface-3 px-1.5 py-px font-mono text-[11px] font-medium text-fg-2 tabular max-lg:absolute max-lg:-top-1 max-lg:-right-1 max-lg:px-1">
+                  <Loader2 className="size-2.5 animate-spin" />
+                  {uploadCount}
                 </span>
               )}
             </a>

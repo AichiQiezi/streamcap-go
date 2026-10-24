@@ -22,6 +22,7 @@ interface Form {
   schedHours: string;
   push: boolean;
   notifyOnly: boolean;
+  autoUpload: boolean;
   flvDirect: boolean;
 }
 
@@ -43,6 +44,7 @@ function fromRec(r: Rec): Form {
     schedHours: (r.monitor_hours || "").split(",")[0] || "5",
     push: r.enabled_message_push,
     notifyOnly: r.only_notify_no_record,
+    autoUpload: r.auto_upload,
     flvDirect: r.flv_use_direct_download,
   };
 }
@@ -81,6 +83,7 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
         schedHours: "5",
         push: false,
         notifyOnly: Boolean(v.only_notify_no_record),
+        autoUpload: false,
         flvDirect: Boolean(v.flv_use_direct_download),
       });
     };
@@ -120,6 +123,7 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
       monitor_hours: f.scheduled ? f.schedHours : null,
       enabled_message_push: f.push,
       only_notify_no_record: f.notifyOnly,
+      auto_upload: f.autoUpload,
       flv_use_direct_download: f.flvDirect,
     };
     setSaving(true);
@@ -262,6 +266,15 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
               {!f.notifyOnly && (
                 <Field inline label="开播时也提醒我" hint="录制的同时，发一条开播提醒到已启用的推送渠道">
                   <Switch checked={f.push} onChange={(v) => set("push", v)} />
+                </Field>
+              )}
+              {!f.notifyOnly && (
+                <Field
+                  inline
+                  label="下播后自动投稿到 B站"
+                  hint="录像保存好后，按「设置 → B站投稿」里的模板自动上传。太短的录像会跳过"
+                >
+                  <Switch checked={f.autoUpload} onChange={(v) => set("autoUpload", v)} />
                 </Field>
               )}
             </div>

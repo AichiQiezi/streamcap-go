@@ -23,6 +23,7 @@ import (
 	"github.com/AichiQiezi/streamcap-go/internal/platform"
 	"github.com/AichiQiezi/streamcap-go/internal/store"
 	"github.com/AichiQiezi/streamcap-go/internal/sysutil"
+	"github.com/AichiQiezi/streamcap-go/internal/upload"
 )
 
 // Hooks let the app layer react to UI requests that aren't about rooms.
@@ -36,6 +37,7 @@ type Hooks struct {
 // Server bundles the handlers.
 type Server struct {
 	m        *monitor.Manager
+	up       *upload.Uploader
 	hub      *hub
 	static   fs.FS // built web UI (may be nil)
 	loopback bool  // bound to 127.0.0.1: reject foreign Host headers (DNS rebinding)
@@ -43,8 +45,8 @@ type Server struct {
 }
 
 // New builds the HTTP handler. static is the embedded web/dist (nil = API only).
-func New(m *monitor.Manager, static fs.FS, loopback bool, hooks Hooks) http.Handler {
-	s := &Server{m: m, hub: newHub(m), static: static, loopback: loopback, hooks: hooks}
+func New(m *monitor.Manager, up *upload.Uploader, static fs.FS, loopback bool, hooks Hooks) http.Handler {
+	s := &Server{m: m, up: up, hub: newHub(m, up), static: static, loopback: loopback, hooks: hooks}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("POST /api/recordings", s.add)
@@ -66,6 +68,17 @@ func New(m *monitor.Manager, static fs.FS, loopback bool, hooks Hooks) http.Hand
 	mux.HandleFunc("GET /api/files/raw", s.rawFile)
 	mux.HandleFunc("DELETE /api/files", s.deleteFile)
 	mux.HandleFunc("POST /api/files/reveal", s.revealFile)
+	mux.HandleFunc("GET /api/bili/account", s.biliAccount)
+	mux.HandleFunc("POST /api/bili/login", s.biliLogin)
+	mux.HandleFunc("POST /api/bili/login/poll", s.biliLoginPoll)
+	mux.HandleFunc("POST /api/bili/logout", s.biliLogout)
+	mux.HandleFunc("GET /api/bili/partitions", s.biliPartitions)
+	mux.HandleFunc("GET /api/uploads", s.listUploads)
+	mux.HandleFunc("GET /api/uploads/draft", s.uploadDraft)
+	mux.HandleFunc("POST /api/uploads", s.addUpload)
+	mux.HandleFunc("POST /api/uploads/{id}/retry", s.uploadAction(up.Retry))
+	mux.HandleFunc("POST /api/uploads/{id}/cancel", s.uploadAction(up.Cancel))
+	mux.HandleFunc("DELETE /api/uploads/{id}", s.uploadAction(up.Remove))
 	mux.HandleFunc("GET /api/ws", s.ws)
 	mux.HandleFunc("POST /api/app/show", s.appShow)
 	mux.HandleFunc("POST /api/app/quit", s.appQuit)

@@ -9,6 +9,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/AichiQiezi/streamcap-go/internal/monitor"
+	"github.com/AichiQiezi/streamcap-go/internal/upload"
 )
 
 // hub fans manager events out to WebSocket clients. Room updates are coalesced per room and
@@ -27,9 +28,19 @@ type client struct {
 
 const flushEvery = 300 * time.Millisecond
 
-func newHub(m *monitor.Manager) *hub {
+func newHub(m *monitor.Manager, up *upload.Uploader) *hub {
 	h := &hub{m: m, clients: map[*client]struct{}{}, pending: map[string]struct{}{}}
 	m.Subscribe(h.onEvent)
+	up.Subscribe(func(ev upload.Event) {
+		switch {
+		case ev.Task != nil:
+			h.broadcast("upload", ev.Task)
+		case ev.Removed != "":
+			h.broadcast("upload_removed", ev.Removed)
+		case ev.Account:
+			h.broadcast("bili_account", map[string]any{"account": up.Account()})
+		}
+	})
 	go h.flusher()
 	return h
 }

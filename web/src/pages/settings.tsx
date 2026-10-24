@@ -1,6 +1,7 @@
 import { ChevronDown, CircleAlert, Eye, EyeOff, Monitor, Moon, Send, Sun } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { BiliAccountRow, PartitionSelect, textareaClass } from "@/components/bili";
 import { Button, cx, Field, Input, Segmented, Select, Switch } from "@/components/ui";
 import { api } from "@/lib/api";
 import { COOKIE_HINTS, COOKIE_PLATFORMS, platformColor, platformName } from "@/lib/platforms";
@@ -8,7 +9,7 @@ import { useStore } from "@/lib/store";
 import { type ThemeMode, useTheme } from "@/lib/theme";
 import type { SettingsValues } from "@/lib/types";
 
-type Kind = "switch" | "text" | "secret" | "number" | "select" | "segmented";
+type Kind = "switch" | "text" | "textarea" | "secret" | "number" | "select" | "segmented";
 
 interface Item {
   key: string;
@@ -215,6 +216,16 @@ function Control({ item, value, onChange }: { item: Item; value: unknown; onChan
           {item.suffix}
         </div>
       );
+    case "textarea":
+      return (
+        <textarea
+          rows={3}
+          className={cx(textareaClass, item.width ?? "w-[360px]")}
+          value={str}
+          placeholder={item.placeholder}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      );
     case "secret":
       return (
         <SecretInput
@@ -235,6 +246,37 @@ function Control({ item, value, onChange }: { item: Item; value: unknown; onChan
         />
       );
   }
+}
+
+const TEMPLATE_HINT = "可用 {anchor} 主播、{title} 直播标题、{date} 日期、{time} 开播时间、{platform} 平台、{url} 直播间链接";
+
+const BILI_ITEMS: Item[] = [
+  { key: "bili_upload_title", label: "标题模板", kind: "text", width: "w-[360px]", hint: `${TEMPLATE_HINT}。最长 80 字，超出会截断` },
+  { key: "bili_upload_desc", label: "简介模板", kind: "textarea" },
+  { key: "bili_upload_tags", label: "标签", kind: "text", width: "w-[360px]", hint: "英文或中文逗号分隔，最多 10 个；也可以用 {anchor} 等变量" },
+  {
+    key: "bili_upload_copyright", label: "类型", kind: "segmented",
+    options: [{ value: "1", label: "自制" }, { value: "2", label: "转载" }],
+    hint: "录别人的直播应选转载，来源会自动填直播间链接",
+  },
+  { key: "bili_upload_min_minutes", label: "自动投稿最短时长", kind: "number", suffix: "分钟", hint: "开了「下播后自动投稿」的直播间，录像短于这个时长就不投稿，避免把开播几秒就断的录像传上去" },
+];
+
+/** Bilibili upload: the account and the defaults that prefill every submission. */
+function BiliCard({ draft, set }: { draft: SettingsValues; set: (k: string, v: string | boolean) => void }) {
+  return (
+    <Card id="bili" title="B站投稿" desc="把录像上传到你的 B站账号。在「录像」页手动投稿，或给直播间打开「下播后自动投稿到 B站」">
+      <BiliAccountRow />
+      <Field inline label="默认分区" hint="投稿时可以再改">
+        <PartitionSelect value={Number(draft.bili_upload_tid) || 0} onChange={(v) => set("bili_upload_tid", String(v))} />
+      </Field>
+      {BILI_ITEMS.map((it) => (
+        <Field key={it.key} inline label={it.label} hint={it.hint ?? (it.key === "bili_upload_desc" ? TEMPLATE_HINT : undefined)}>
+          <Control item={it} value={draft[it.key]} onChange={(v) => set(it.key, v)} />
+        </Field>
+      ))}
+    </Card>
+  );
 }
 
 const THEME_OPTIONS: { value: ThemeMode; label: React.ReactNode }[] = [
@@ -295,7 +337,7 @@ export function SettingsPage() {
   useEffect(load, []);
 
   const secs = useMemo(() => sections(options.qualities, [...options.video_formats, ...options.audio_formats]), [options]);
-  const nav = [{ id: "appearance", title: "外观" }, ...secs.map((s) => ({ id: s.id, title: s.title })), { id: "channels", title: "推送渠道" }, { id: "cookies", title: "平台 Cookie" }];
+  const nav = [{ id: "appearance", title: "外观" }, ...secs.map((s) => ({ id: s.id, title: s.title })), { id: "bili", title: "B站投稿" }, { id: "channels", title: "推送渠道" }, { id: "cookies", title: "平台 Cookie" }];
 
   const changed = saved ? Object.keys(draft).filter((k) => draft[k] !== saved[k]) : [];
   const cookieChanged = [...new Set([...Object.keys(cookies), ...Object.keys(cookiesSaved)])].filter((k) => (cookies[k] ?? "") !== (cookiesSaved[k] ?? ""));
@@ -428,6 +470,8 @@ export function SettingsPage() {
               ))}
           </Card>
         ))}
+
+        <BiliCard draft={draft} set={set} />
 
         <section id="channels" className="scroll-mt-6">
           <h2 className="text-[15px] font-semibold tracking-[-0.01em]">推送渠道</h2>

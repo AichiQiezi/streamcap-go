@@ -1,6 +1,7 @@
-import { ArrowDown, ArrowUp, FileAudio, FileVideo, Film, FolderOpen, Play, RefreshCw, Search, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, FileAudio, FileVideo, Film, FolderOpen, Play, RefreshCw, Search, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { UploadDialog } from "@/components/bili";
 import { PlayerDialog } from "@/components/player";
 import { Button, Confirm, cx, IconButton, Input, Select, Tip } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -97,6 +98,7 @@ export function LibraryPage() {
   const [showOriginal, setShowOriginal] = useState(false);
   const [playing, setPlaying] = useState<MediaFile | null>(null);
   const [deleting, setDeleting] = useState<MediaFile | null>(null);
+  const [uploading, setUploading] = useState<MediaFile | null>(null);
   const [loading, setLoading] = useState(false);
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "time", desc: true });
   const activeFiles = useStore((st) =>
@@ -217,7 +219,7 @@ export function LibraryPage() {
       </div>
 
       <div className="mt-4 overflow-hidden rounded-xl border border-line bg-surface">
-        <div className="grid grid-cols-[minmax(0,1fr)_80px_96px] md:grid-cols-[minmax(0,1fr)_200px_90px_110px_112px] gap-4 border-b border-line px-4 py-2 text-[11.5px] font-medium text-fg-3">
+        <div className="grid grid-cols-[minmax(0,1fr)_80px_128px] md:grid-cols-[minmax(0,1fr)_200px_90px_110px_144px] gap-4 border-b border-line px-4 py-2 text-[11.5px] font-medium text-fg-3">
           <SortHead k="name" sort={sort} onSort={onSort}>
             文件
           </SortHead>
@@ -254,7 +256,7 @@ export function LibraryPage() {
               <div
                 key={f.path}
                 onDoubleClick={() => setPlaying(f)}
-                className="group grid grid-cols-[minmax(0,1fr)_80px_96px] md:grid-cols-[minmax(0,1fr)_200px_90px_110px_112px] items-center gap-4 border-b border-line px-4 py-2 text-[12.5px] last:border-b-0 hover:bg-surface-2/60"
+                className="group grid grid-cols-[minmax(0,1fr)_80px_128px] md:grid-cols-[minmax(0,1fr)_200px_90px_110px_144px] items-center gap-4 border-b border-line px-4 py-2 text-[12.5px] last:border-b-0 hover:bg-surface-2/60"
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <button
@@ -301,6 +303,11 @@ export function LibraryPage() {
                   <IconButton label="播放" onClick={() => setPlaying(f)}>
                     <Play className="size-3.5" />
                   </IconButton>
+                  {f.kind === "video" && (
+                    <IconButton label={isActive(f) ? "正在录制，录完后才能投稿" : "投稿到 B站"} disabled={isActive(f)} onClick={() => setUploading(f)}>
+                      <Upload className="size-3.5" />
+                    </IconButton>
+                  )}
                   <IconButton label="在文件夹中显示" onClick={() => api.revealFile(f.path)}>
                     <FolderOpen className="size-3.5" />
                   </IconButton>
@@ -315,6 +322,7 @@ export function LibraryPage() {
       </div>
 
       <PlayerDialog file={playing} onClose={() => setPlaying(null)} />
+      <UploadDialog file={uploading} onClose={() => setUploading(null)} />
       <Confirm
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}

@@ -122,6 +122,31 @@ func Thumbnail(ctx context.Context, file, dest string) error {
 	return keep(tmp, dest)
 }
 
+// Cover returns a 1280px-wide JPEG of a frame at offset into file, for a Bilibili cover.
+func Cover(ctx context.Context, file string, offset time.Duration) ([]byte, error) {
+	ffmpeg, _ := recorder.Binaries()
+	if ffmpeg == "" {
+		return nil, fmt.Errorf("ffmpeg not found")
+	}
+	if err := acquire(ctx); err != nil {
+		return nil, err
+	}
+	defer release()
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, ffmpeg, "-v", "error", "-ss", strconv.FormatFloat(offset.Seconds(), 'f', 1, 64),
+		"-i", file, "-frames:v", "1", "-vf", "scale=1280:-2", "-q:v", "3", "-f", "image2", "-c:v", "mjpeg", "pipe:1")
+	hide(cmd)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("empty cover")
+	}
+	return out, nil
+}
+
 // StreamThumbnail writes a 640px-wide JPEG of the first frame of a live stream to dest
 // (atomically). Not for a stream that is being recorded (see the package doc).
 func StreamThumbnail(ctx context.Context, url string, headers map[string]string, proxy, dest string) error {

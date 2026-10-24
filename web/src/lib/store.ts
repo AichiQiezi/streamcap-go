@@ -1,7 +1,7 @@
 import { toast } from "sonner";
 import { create } from "zustand";
 import { api } from "./api";
-import type { DiskInfo, OptionsInfo, Rec, RecStats } from "./types";
+import type { BiliAccount, DiskInfo, OptionsInfo, Rec, RecStats, UploadTask } from "./types";
 
 export type ConnState = "open" | "connecting" | "closed";
 
@@ -33,6 +33,11 @@ interface Store {
   quitting: boolean;
   recordingEnabled: boolean;
   conn: ConnState;
+  /** Bilibili upload tasks by id; `uploadOrder` is newest first */
+  uploads: Record<string, UploadTask>;
+  uploadOrder: string[];
+  /** undefined until loaded, null when not logged in */
+  biliAccount: BiliAccount | null | undefined;
   setConn: (c: ConnState) => void;
   upsert: (r: Rec) => void;
   upsertMany: (rs: Rec[]) => void;
@@ -48,6 +53,9 @@ export const useStore = create<Store>()((set) => ({
   quitting: false,
   recordingEnabled: true,
   conn: "connecting",
+  uploads: {},
+  uploadOrder: [],
+  biliAccount: undefined,
   setConn: (conn) => set({ conn }),
   upsert: (r) =>
     set((s) => {
@@ -84,8 +92,25 @@ function wsUrl(): string {
 }
 
 interface WsMessage {
-  event: "recording" | "removed" | "toast" | "quitting" | "order";
+  event: "recording" | "removed" | "toast" | "quitting" | "order" | "upload" | "upload_removed" | "bili_account";
   data: unknown;
+}
+
+function upsertUpload(t: UploadTask) {
+  useStore.setState((s) => ({
+    uploads: { ...s.uploads, [t.id]: t },
+    uploadOrder: s.uploadOrder.includes(t.id) ? s.uploadOrder : [t.id, ...s.uploadOrder],
+  }));
+}
+
+/** Loads upload tasks and the Bilibili account (also used after reconnecting). */
+export async function loadUploads() {
+  const [tasks, acct] = await Promise.all([api.uploads(), api.biliAccount()]);
+  useStore.setState({
+    uploads: Object.fromEntries(tasks.tasks.map((t) => [t.id, t])),
+    uploadOrder: tasks.tasks.map((t) => t.id),
+    biliAccount: acct.account,
+  });
 }
 
 function handleMessage(msg: WsMessage) {
@@ -93,6 +118,15 @@ function handleMessage(msg: WsMessage) {
   if (msg.event === "recording") queueUpsert(msg.data as Rec);
   else if (msg.event === "removed") st.drop(msg.data as string[]);
   else if (msg.event === "quitting") useStore.setState({ quitting: true });
+  else if (msg.event === "upload") upsertUpload(msg.data as UploadTask);
+  else if (msg.event === "upload_removed") {
+    const id = msg.data as string;
+    useStore.setState((s) => {
+      const uploads = { ...s.uploads };
+      delete uploads[id];
+      return { uploads, uploadOrder: s.uploadOrder.filter((x) => x !== id) };
+    });
+  } else if (msg.event === "bili_account") useStore.setState({ biliAccount: (msg.data as { account: BiliAccount | null }).account });
   else if (msg.event === "order") {
     // Reordered (here or in another window): adopt it, keeping any room the list doesn't know yet.
     const ids = (msg.data as string[]).filter((id) => id in st.recs);
@@ -154,6 +188,7 @@ function start(): () => void {
   loadInitial().catch((e: Error) => {
     console.warn("initial state failed:", e);
   });
+  loadUploads().catch((e: Error) => console.warn("uploads failed:", e));
 
   const connect = () => {
     if (!alive) return;
@@ -177,6 +212,7 @@ function start(): () => void {
       }, 25000);
       // Re-sync in case anything changed while disconnected.
       loadInitial().catch(() => undefined);
+      loadUploads().catch(() => undefined);
     };
     socket.onmessage = (ev) => {
       try {

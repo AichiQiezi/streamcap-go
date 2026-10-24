@@ -70,6 +70,20 @@ StreamCap -port 7000  # 换端口
 - 抖音：弹幕的连接签名只有网页自己会生成，所以录制时会在窗口后台挂一个不可见的网页（macOS 用 WKWebView，Windows 用 WebView2），只把它收到的弹幕转发过来；不登录、不伪造签名。只在窗口和托盘 / 菜单栏模式下可用（`-headless` 不支持），方案见 [docs/douyin-danmaku.md](docs/douyin-danmaku.md)。
 - 程序崩溃后自动补整理的录像不会生成 `.ass`（`.danmaku.jsonl` 还在）。
 
+## B站投稿
+
+可以把录像上传到自己的 B站账号：
+
+1. 设置 →「B站投稿」→ 扫码登录：用哔哩哔哩 App 扫码确认，不需要输入密码。登录信息（token 和 Cookie）只保存在本机的 `uploads.json`，到期前会自动续期。
+2. 手动投稿：在「录像」页把鼠标移到视频上，点上传按钮。标题、简介、标签、分区按设置里的模板预填，提交前可以改。
+3. 自动投稿：在直播间设置里打开「下播后自动投稿到 B站」，录像合并、转换完成后会自动加入投稿队列。短于「自动投稿最短时长」（默认 10 分钟）的录像会跳过。
+
+上传进度在「投稿」页查看，一次传一个，失败的可以重试。退出时正在上传的任务会在下次启动后从头重传。分段录制产生的多个文件会投成同一个稿件的多个分P。封面从视频里自动截取一帧。
+
+模板里可以用 `{anchor}` 主播、`{title}` 直播标题、`{date}` 日期、`{time}` 开播时间、`{platform}` 平台、`{url}` 直播间链接。录别人的直播请选「转载」，来源会自动填直播间链接。
+
+登录和投稿走的是 B站 TV / App 端接口（与 [biliup](https://github.com/biliup/biliup-rs) 相同），不是官方开放接口，B站改接口后可能需要跟着更新。
+
 ## 已知限制
 
 - **B 站画质**：不登录时，多数直播间最高只能录到 720p。在 设置 → 平台 Cookie 里填入带 `SESSDATA` 的登录 Cookie 可能解锁原画，这一点还没有用登录 Cookie 实际验证过。
@@ -104,6 +118,7 @@ internal/platform     平台解析接口；douyin/、bilibili/ 是各平台实�
 internal/monitor      每个直播间一个 goroutine：检测、录制、重连、结束一场直播
 internal/recorder     ffmpeg 进程管理、无数据看门狗、合并与转 MP4
 internal/media        ffprobe 读分辨率、生成封面（只读本地文件，不碰直播流地址）
+internal/upload       B站投稿：扫码登录、分片上传、提交稿件、投稿队列
 internal/notify       开播/下播推送（钉钉、飞书、Bark、ntfy、Server酱、Telegram、邮件等）
 internal/store        JSON 存储：原子写入，合并写盘
 internal/api          HTTP 接口 + WebSocket 实时推送
