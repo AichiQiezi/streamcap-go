@@ -118,6 +118,9 @@ func DefaultSettings() Settings {
 		"filename_includes_title":     false,
 		"ascii_save_path":             false,
 		"enable_proxy":                false,
+		// record_egress pins recording traffic to a network interface ("auto" = the physical one
+		// with the default gateway), past a VPN that took the routes. "" = system routing.
+		"record_egress":               "",
 		"proxy_address":               "",
 		"default_platform_with_proxy": "",
 

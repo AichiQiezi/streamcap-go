@@ -85,6 +85,10 @@ StreamCap -port 7000  # 换端口
 
 登录和投稿走的是 B站 TV / App 端接口（与 [biliup](https://github.com/biliup/biliup-rs) 相同），不是官方开放接口，B站改接口后可能需要跟着更新。
 
+## 开着 VPN 录制
+
+全局 VPN（比如 OpenVPN 推送了 `0.0.0.0/1` + `128.0.0.0/1` 路由）会把直播流也拉进隧道，单条连接常常只有几 Mbps，跟不上原画直播，录出来的视频会比实际时长短很多。设置 → 网络 →「录制网络出口」选「自动：绕过 VPN」，录制就直接走本机网卡（Windows 用 `IP_UNICAST_IF`，macOS 用 `IP_BOUND_IF` 绑定网卡），VPN 的其他用途不受影响。自动选择仅支持 Windows，macOS 上直接选网卡（通常是 en0）。
+
 ## 已知限制
 
 - **B 站画质**：不登录时，多数直播间最高只能录到 720p。在 设置 → 平台 Cookie 里填入带 `SESSDATA` 的登录 Cookie 可能解锁原画，这一点还没有用登录 Cookie 实际验证过。

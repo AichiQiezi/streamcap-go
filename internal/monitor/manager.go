@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AichiQiezi/streamcap-go/internal/egress"
 	"github.com/AichiQiezi/streamcap-go/internal/platform"
 	"github.com/AichiQiezi/streamcap-go/internal/store"
 	"github.com/AichiQiezi/streamcap-go/internal/sysutil"
@@ -74,6 +75,7 @@ type Manager struct {
 	diskTotal   uint64
 	finalizeWG  sync.WaitGroup
 	onSaved     func(SavedSession)
+	egress      *egress.Proxy // pins recording traffic to an interface (settings.record_egress)
 	shutdownCtx context.Context
 	shutdown    context.CancelFunc
 }
@@ -82,7 +84,8 @@ type Manager struct {
 func New(st *store.Store, opts Options) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Manager{st: st, opts: opts, runtimes: map[string]*runtime{}, sems: map[string]chan struct{}{},
-		shutdownCtx: ctx, shutdown: cancel}
+		shutdownCtx: ctx, shutdown: cancel, egress: egress.New()}
+	m.egress.SetInterface(m.Settings().String("record_egress"))
 	_ = os.MkdirAll(opts.ThumbDir, 0o755)
 	for _, room := range m.roomsSnapshot() {
 		m.runtimes[room.ID] = newRuntime(m, room.ID)
@@ -242,6 +245,7 @@ func (m *Manager) UpdateSettings(values map[string]any) {
 	m.mu.Lock()
 	m.sems = map[string]chan struct{}{} // pick up a new concurrency limit
 	m.mu.Unlock()
+	m.egress.SetInterface(m.Settings().String("record_egress")) // from the next connection on
 	m.wakeAll()
 }
 
@@ -726,6 +730,14 @@ func dupReason(r *store.Room) string {
 }
 
 func (m *Manager) proxyFor(platformKey string, s store.Settings) string {
+	if p := m.userProxy(platformKey, s); p != "" {
+		return p
+	}
+	return m.egress.URL() // "" unless recording traffic is pinned to an interface
+}
+
+// userProxy is the proxy from the 网络代理 settings for this platform, or "".
+func (m *Manager) userProxy(platformKey string, s store.Settings) string {
 	if !s.Bool("enable_proxy") {
 		return ""
 	}

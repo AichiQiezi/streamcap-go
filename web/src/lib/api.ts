@@ -59,6 +59,9 @@ export const api = {
   revealFile: (path?: string) =>
     post<{ ok: boolean }>(`/api/files/reveal${path ? `?path=${encodeURIComponent(path)}` : ""}`),
 
+  /** Interfaces recording traffic can be pinned to; `auto` is what "auto" resolves to now. */
+  netInterfaces: () => get<{ interfaces: { value: string; label: string }[]; auto: string }>("/api/net/interfaces"),
+
   biliAccount: () => get<{ account: BiliAccount | null }>("/api/bili/account"),
   /** Starts a QR login: `qr` is a PNG data URL to scan with the Bilibili app. */
   biliLogin: () => post<{ auth_code: string; qr: string }>("/api/bili/login", {}),

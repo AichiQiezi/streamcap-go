@@ -18,6 +18,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/AichiQiezi/streamcap-go/internal/egress"
 	"github.com/AichiQiezi/streamcap-go/internal/monitor"
 	"github.com/AichiQiezi/streamcap-go/internal/notify"
 	"github.com/AichiQiezi/streamcap-go/internal/platform"
@@ -79,6 +80,7 @@ func New(m *monitor.Manager, up *upload.Uploader, static fs.FS, loopback bool, h
 	mux.HandleFunc("POST /api/uploads/{id}/retry", s.uploadAction(up.Retry))
 	mux.HandleFunc("POST /api/uploads/{id}/cancel", s.uploadAction(up.Cancel))
 	mux.HandleFunc("DELETE /api/uploads/{id}", s.uploadAction(up.Remove))
+	mux.HandleFunc("GET /api/net/interfaces", s.netInterfaces)
 	mux.HandleFunc("GET /api/ws", s.ws)
 	mux.HandleFunc("POST /api/app/show", s.appShow)
 	mux.HandleFunc("POST /api/app/quit", s.appQuit)
@@ -394,6 +396,11 @@ func (s *Server) putCookies(w http.ResponseWriter, r *http.Request) {
 	}
 	s.m.UpdateCookies(values)
 	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// netInterfaces lists where recording traffic can be pinned (settings.record_egress).
+func (s *Server) netInterfaces(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, map[string]any{"interfaces": egress.Choices(), "auto": egress.AutoName()})
 }
 
 // ---- files ---------------------------------------------------------------------------------------

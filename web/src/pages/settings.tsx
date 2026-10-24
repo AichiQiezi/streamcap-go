@@ -92,7 +92,7 @@ const CHANNELS: Channel[] = [
   ] },
 ];
 
-function sections(qualities: { value: string; label: string }[], formats: string[]): Section[] {
+function sections(qualities: { value: string; label: string }[], formats: string[], egress: { value: string; label: string }[]): Section[] {
   return [
     {
       id: "record",
@@ -141,8 +141,12 @@ function sections(qualities: { value: string; label: string }[], formats: string
     },
     {
       id: "network",
-      title: "网络代理",
+      title: "网络",
       items: [
+        {
+          key: "record_egress", label: "录制网络出口", kind: "select", options: egress, width: "w-[320px]",
+          hint: "连着公司 VPN 等全局 VPN 时，直播流会绕道 VPN，高码率的流下载速度跟不上直播，录出来的视频会比实际短很多。选「自动：绕过 VPN」让录制直接走本机网卡；VPN 的其他用途不受影响。修改后从下一段录制开始生效",
+        },
         { key: "enable_proxy", label: "启用代理", kind: "switch" },
         { key: "proxy_address", label: "代理地址", kind: "text", mono: true, placeholder: "127.0.0.1:7890", width: "w-[260px]", when: (v) => Boolean(v.enable_proxy) },
         { key: "default_platform_with_proxy", label: "走代理的平台", kind: "text", mono: true, width: "w-[360px]", hint: "平台标识，英文逗号分隔", when: (v) => Boolean(v.enable_proxy) },
@@ -208,7 +212,7 @@ function Control({ item, value, onChange }: { item: Item; value: unknown; onChan
     case "segmented":
       return <Segmented size="sm" value={str} onChange={onChange} options={item.options ?? []} />;
     case "select":
-      return <Select value={str} onChange={onChange} options={item.options ?? []} className="w-56" />;
+      return <Select value={str} onChange={onChange} options={item.options ?? []} className={item.width ?? "w-56"} />;
     case "number":
       return (
         <div className="flex items-center gap-2 text-[12.5px] text-fg-3">
@@ -340,7 +344,19 @@ export function SettingsPage() {
   };
   useEffect(load, []);
 
-  const secs = useMemo(() => sections(options.qualities, [...options.video_formats, ...options.audio_formats]), [options]);
+  const [egress, setEgress] = useState<{ value: string; label: string }[]>([{ value: "", label: "系统默认（跟随 VPN / 系统路由）" }]);
+  useEffect(() => {
+    api.netInterfaces().then(
+      (r) =>
+        setEgress([
+          { value: "", label: "系统默认（跟随 VPN / 系统路由）" },
+          { value: "auto", label: r.auto ? `自动：绕过 VPN（当前 ${r.auto}）` : "自动：绕过 VPN（没找到可用网卡）" },
+          ...r.interfaces.map((i) => ({ value: i.value, label: `指定网卡：${i.label}` })),
+        ]),
+      () => undefined,
+    );
+  }, []);
+  const secs = useMemo(() => sections(options.qualities, [...options.video_formats, ...options.audio_formats], egress), [options, egress]);
   const nav = [{ id: "appearance", title: "外观" }, ...secs.map((s) => ({ id: s.id, title: s.title })), { id: "bili", title: "B站投稿" }, { id: "channels", title: "推送渠道" }, { id: "cookies", title: "平台 Cookie" }];
 
   const changed = saved ? Object.keys(draft).filter((k) => draft[k] !== saved[k]) : [];
