@@ -269,6 +269,16 @@ func TestVarsForFile(t *testing.T) {
 		v.Start.Format("2006-01-02 15:04:05") != "2026-10-25 00:19:09" {
 		t.Errorf("vars = %+v", v)
 	}
+	for name, title := range map[string]string{
+		"小酱不萌_2026-10-13_22-55-13_000.mp4":    "",
+		"小酱不萌_2026-10-13_22-55-13_p3_002.mp4": "",
+		"小酱不萌_2026-10-13_22-55-13_聊天_001.ts":  "聊天",
+		"小酱不萌_2026-10-13_22-55-13_第_2_场.mp4":  "第_2_场",
+	} {
+		if v := u.VarsForFile(filepath.Join(dir, name)); v.Title != title || v.Anchor != "小酱不萌" {
+			t.Errorf("%s: anchor %q title %q, want title %q", name, v.Anchor, v.Title, title)
+		}
+	}
 	v = u.VarsForFile(filepath.Join(dir, "other.mp4"))
 	if v.Anchor != "other" || v.URL != "" {
 		t.Errorf("unknown file vars = %+v", v)

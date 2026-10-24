@@ -598,15 +598,20 @@ func (u *Uploader) Draft(files []string, v Vars) Request {
 	return r
 }
 
-// recName matches recordings named 主播_2026-10-14_19-58-02[_标题][_p2][_001] (internal/monitor/paths.go).
-var recName = regexp.MustCompile(`^(.+?)_(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})(?:_(.*?))?(?:_p\d+)?(?:_\d{3})?$`)
+// recName matches recordings named 主播_2026-10-14_19-58-02[_标题][_p2][_001] (internal/monitor/paths.go);
+// group 6 is the rest, from which the part and segment suffixes are cut before it is read as the title.
+var (
+	recName   = regexp.MustCompile(`^(.+?)_(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})(.*)$`)
+	recSuffix = regexp.MustCompile(`(_p\d+)?(_\d{3})?$`)
+)
 
 // VarsForFile guesses the template values of a recording from its name and the room list.
 func (u *Uploader) VarsForFile(file string) Vars {
 	stem := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 	v := Vars{Anchor: stem}
 	if m := recName.FindStringSubmatch(stem); m != nil {
-		v.Anchor, v.Title = m[1], m[6]
+		v.Anchor = m[1]
+		v.Title = strings.TrimPrefix(recSuffix.ReplaceAllString(m[6], ""), "_")
 		v.Start, _ = time.ParseInLocation("2006-01-02 15-04-05", m[2]+" "+m[3]+"-"+m[4]+"-"+m[5], time.Local)
 	} else if st, err := os.Stat(file); err == nil {
 		v.Start = st.ModTime()
