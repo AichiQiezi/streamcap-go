@@ -155,6 +155,8 @@ export interface UploadTask {
   tid: number;
   copyright: 1 | 2;
   source: string;
+  /** 仅自己可见 */
+  only_self?: boolean;
   room_id?: string;
   state: UploadState;
   error?: string;
@@ -174,4 +176,6 @@ export interface UploadForm {
   tid: number;
   copyright: 1 | 2;
   source: string;
+  /** 仅自己可见 */
+  only_self: boolean;
 }

@@ -165,12 +165,13 @@ func DefaultSettings() Settings {
 		"recipient_email":                   "",
 
 		// Bilibili upload defaults. Templates take {anchor} {title} {date} {time} {platform} {url}.
-		"bili_upload_title":       "【直播录像】{anchor} {date} {title}",
-		"bili_upload_desc":        "{anchor} 的直播录像\n开播时间：{date} {time}\n直播间：{url}",
-		"bili_upload_tags":        "直播录像,{anchor}",
-		"bili_upload_tid":         "21",
-		"bili_upload_copyright":   "2",
-		"bili_upload_min_minutes": "10",
+		"bili_upload_title":        "【直播录像】{anchor} {date} {title}",
+		"bili_upload_desc":         "{anchor} 的直播录像\n开播时间：{date} {time}\n直播间：{url}",
+		"bili_upload_tags":         "直播录像,{anchor}",
+		"bili_upload_tid":          "21",
+		"bili_upload_copyright":    "2",
+		"bili_upload_min_minutes":  "10",
+		"bili_upload_auto_private": true, // after-live submissions are 仅自己可见
 	}
 }
 

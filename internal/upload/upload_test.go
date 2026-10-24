@@ -193,6 +193,7 @@ func TestUploaderEndToEnd(t *testing.T) {
 	u.Start(ctx)
 	r := u.Draft([]string{file}, Vars{Anchor: "主播", Title: "聊天", URL: "https://live.douyin.com/1", Platform: "抖音",
 		Start: time.Date(2026, 10, 24, 20, 5, 0, 0, time.Local)})
+	r.OnlySelf = true
 	task, err := u.Enqueue(r)
 	if err != nil {
 		t.Fatal(err)
@@ -225,6 +226,9 @@ func TestUploaderEndToEnd(t *testing.T) {
 	if a.Title != "【直播录像】主播 2026-10-24 聊天" || a.Tag != "直播录像,主播" || a.Copyright != 2 ||
 		a.Source != "https://live.douyin.com/1" || a.Tid != 21 || len(a.Videos) != 1 || a.Videos[0].Filename != "n123" {
 		t.Errorf("submitted %+v", a)
+	}
+	if a.IsOnlySelf != 1 {
+		t.Errorf("is_only_self = %d, want 1", a.IsOnlySelf)
 	}
 	if !strings.Contains(a.Desc, "开播时间：2026-10-24 20:05") {
 		t.Errorf("desc = %q", a.Desc)
@@ -308,7 +312,7 @@ func TestSessionSavedQueuesOnlyAutoUploadRooms(t *testing.T) {
 	if len(ts) != 1 {
 		t.Fatalf("queued %d tasks, want 1", len(ts))
 	}
-	if got := ts[0]; len(got.Files) != 1 || got.RoomID != "r1" || got.Source != room.URL || got.Title != "【直播录像】主播 2026-10-25 聊天" {
+	if got := ts[0]; len(got.Files) != 1 || got.RoomID != "r1" || got.Source != room.URL || got.Title != "【直播录像】主播 2026-10-25 聊天" || !got.OnlySelf {
 		t.Errorf("task = %+v", got.UploadTask)
 	}
 

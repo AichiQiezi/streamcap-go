@@ -1,5 +1,5 @@
-import { ArrowDown, ArrowUp, FileAudio, FileVideo, Film, FolderOpen, Play, RefreshCw, Search, Trash2, Upload } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowDown, ArrowUp, FileAudio, FileVideo, Film, FolderOpen, Play, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { UploadDialog } from "@/components/bili";
 import { PlayerDialog } from "@/components/player";
@@ -62,6 +62,29 @@ function describe(f: MediaFile): Desc {
 
 type SortKey = "time" | "size" | "name";
 
+/** A checkbox that can show "some selected". */
+function Check({ checked, indeterminate, onChange, label }: { checked: boolean; indeterminate?: boolean; onChange: (e: React.MouseEvent) => void; label: string }) {
+  return (
+    <input
+      type="checkbox"
+      aria-label={label}
+      checked={checked}
+      ref={(el) => {
+        if (el) el.indeterminate = Boolean(indeterminate);
+      }}
+      onChange={() => undefined}
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange(e);
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+      className="size-3.5 cursor-pointer accent-[var(--fg)]"
+    />
+  );
+}
+
+const GRID = "grid-cols-[20px_minmax(0,1fr)_80px_128px] md:grid-cols-[20px_minmax(0,1fr)_200px_90px_110px_144px]";
+
 function SortHead({
   k,
   sort,
@@ -98,7 +121,10 @@ export function LibraryPage() {
   const [showOriginal, setShowOriginal] = useState(false);
   const [playing, setPlaying] = useState<MediaFile | null>(null);
   const [deleting, setDeleting] = useState<MediaFile | null>(null);
-  const [uploading, setUploading] = useState<MediaFile | null>(null);
+  const [uploading, setUploading] = useState<MediaFile[] | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDelete, setBulkDelete] = useState(false);
+  const lastClicked = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "time", desc: true });
   const activeFiles = useStore((st) =>
@@ -167,6 +193,55 @@ export function LibraryPage() {
 
   const total = visible.reduce((s, f) => s + f.size, 0);
 
+  // Selection only ever covers files that still exist and are shown.
+  useEffect(() => {
+    setSelected((sel) => {
+      const shown = new Set(visible.map((f) => f.path));
+      const next = new Set([...sel].filter((p) => shown.has(p)));
+      return next.size === sel.size ? sel : next;
+    });
+  }, [visible]);
+  const picked = visible.filter((f) => selected.has(f.path));
+  const pickedSize = picked.reduce((s, f) => s + f.size, 0);
+  const allPicked = visible.length > 0 && picked.length === visible.length;
+
+  function toggle(f: MediaFile, e: React.MouseEvent) {
+    setSelected((sel) => {
+      const next = new Set(sel);
+      const on = !sel.has(f.path);
+      // Shift-click selects (or clears) the whole range since the last click, like a file manager.
+      const from = lastClicked.current ? visible.findIndex((x) => x.path === lastClicked.current) : -1;
+      const to = visible.findIndex((x) => x.path === f.path);
+      const range = e.shiftKey && from >= 0 ? visible.slice(Math.min(from, to), Math.max(from, to) + 1) : [f];
+      range.forEach((x) => (on ? next.add(x.path) : next.delete(x.path)));
+      return next;
+    });
+    lastClicked.current = f.path;
+  }
+
+  const toggleAll = () => setSelected(allPicked ? new Set() : new Set(visible.map((f) => f.path)));
+
+  // Parts of one submission go oldest first.
+  const pickedVideos = picked.filter((f) => f.kind === "video" && !isActive(f)).sort((a, b) => a.mtime - b.mtime);
+  const pickedDeletable = picked.filter((f) => !isActive(f));
+
+  async function confirmBulkDelete() {
+    const gone = new Set<string>();
+    const failed: string[] = [];
+    for (const f of pickedDeletable) {
+      try {
+        await api.deleteFile(f.path);
+        gone.add(f.path);
+      } catch (e) {
+        failed.push(`${f.name}：${(e as Error).message}`);
+      }
+    }
+    setFiles((fs) => fs?.filter((f) => !gone.has(f.path)) ?? null);
+    setSelected(new Set());
+    if (failed.length) toast.error(`删除了 ${gone.size} 个，${failed.length} 个失败`, { description: failed.slice(0, 3).join("\n"), duration: 10000 });
+    else toast.success(`已删除 ${gone.size} 个文件`);
+  }
+
   async function confirmDelete() {
     if (!deleting) return;
     try {
@@ -219,7 +294,8 @@ export function LibraryPage() {
       </div>
 
       <div className="mt-4 overflow-hidden rounded-xl border border-line bg-surface">
-        <div className="grid grid-cols-[minmax(0,1fr)_80px_128px] md:grid-cols-[minmax(0,1fr)_200px_90px_110px_144px] gap-4 border-b border-line px-4 py-2 text-[11.5px] font-medium text-fg-3">
+        <div className={cx("grid items-center gap-4 border-b border-line px-4 py-2 text-[11.5px] font-medium text-fg-3", GRID)}>
+          <Check checked={allPicked} indeterminate={picked.length > 0 && !allPicked} onChange={toggleAll} label={allPicked ? "取消全选" : "全选"} />
           <SortHead k="name" sort={sort} onSort={onSort}>
             文件
           </SortHead>
@@ -256,8 +332,13 @@ export function LibraryPage() {
               <div
                 key={f.path}
                 onDoubleClick={() => setPlaying(f)}
-                className="group grid grid-cols-[minmax(0,1fr)_80px_128px] md:grid-cols-[minmax(0,1fr)_200px_90px_110px_144px] items-center gap-4 border-b border-line px-4 py-2 text-[12.5px] last:border-b-0 hover:bg-surface-2/60"
+                className={cx(
+                  "group grid items-center gap-4 border-b border-line px-4 py-2 text-[12.5px] last:border-b-0",
+                  GRID,
+                  selected.has(f.path) ? "bg-surface-2" : "hover:bg-surface-2/60",
+                )}
               >
+                <Check checked={selected.has(f.path)} onChange={(e) => toggle(f, e)} label={`选择 ${f.name}`} />
                 <div className="flex min-w-0 items-center gap-3">
                   <button
                     onClick={() => setPlaying(f)}
@@ -304,7 +385,7 @@ export function LibraryPage() {
                     <Play className="size-3.5" />
                   </IconButton>
                   {f.kind === "video" && (
-                    <IconButton label={isActive(f) ? "正在录制，录完后才能投稿" : "投稿到 B站"} disabled={isActive(f)} onClick={() => setUploading(f)}>
+                    <IconButton label={isActive(f) ? "正在录制，录完后才能投稿" : "投稿到 B站"} disabled={isActive(f)} onClick={() => setUploading([f])}>
                       <Upload className="size-3.5" />
                     </IconButton>
                   )}
@@ -322,7 +403,46 @@ export function LibraryPage() {
       </div>
 
       <PlayerDialog file={playing} onClose={() => setPlaying(null)} />
-      <UploadDialog file={uploading} onClose={() => setUploading(null)} />
+      <UploadDialog files={uploading} onClose={() => setUploading(null)} />
+
+      {picked.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-2xl border border-line bg-surface py-2 pr-2 pl-5 shadow-2xl animate-fade lg:ml-[108px]">
+          <span className="mr-2 text-[13px] whitespace-nowrap text-fg-2">
+            已选 <span className="font-mono text-fg tabular">{picked.length}</span> 个 · <span className="font-mono tabular">{bytes(pickedSize)}</span>
+          </span>
+          <Button
+            size="sm"
+            icon={<Upload className="size-3.5" />}
+            disabled={pickedVideos.length === 0}
+            title={pickedVideos.length < picked.length ? "只投稿已录完的视频文件" : undefined}
+            onClick={() => setUploading(pickedVideos)}
+          >
+            投稿到 B站{pickedVideos.length > 1 && `（${pickedVideos.length} P）`}
+          </Button>
+          <Button size="sm" variant="danger" icon={<Trash2 className="size-3.5" />} disabled={pickedDeletable.length === 0} onClick={() => setBulkDelete(true)}>
+            删除
+          </Button>
+          <IconButton label="取消选择" onClick={() => setSelected(new Set())}>
+            <X className="size-3.5" />
+          </IconButton>
+        </div>
+      )}
+      <Confirm
+        open={bulkDelete}
+        onOpenChange={setBulkDelete}
+        title={`删除这 ${pickedDeletable.length} 个文件？`}
+        body={
+          <>
+            共 <span className="font-mono text-fg">{bytes(pickedDeletable.reduce((s, f) => s + f.size, 0))}</span>。文件会被直接删除，不经过回收站，无法恢复。
+            {pickedDeletable.length < picked.length && (
+              <span className="mt-2 block">有 {picked.length - pickedDeletable.length} 个正在录制的文件不会删除。</span>
+            )}
+          </>
+        }
+        confirmText="永久删除"
+        danger
+        onConfirm={confirmBulkDelete}
+      />
       <Confirm
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}

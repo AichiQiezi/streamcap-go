@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import type { MediaFile, Partition, UploadForm } from "@/lib/types";
-import { Button, Confirm, cx, Dialog, Field, Input, Segmented } from "./ui";
+import { Button, Confirm, cx, Dialog, Field, Input, Segmented, Switch } from "./ui";
 
 type QRState = { qr: string; code: string; status: "waiting" | "scanned" | "expired" } | { error: string } | null;
 
@@ -216,8 +216,12 @@ export function PartitionSelect({ value, onChange, className }: { value: number;
 export const textareaClass =
   "w-full rounded-lg border border-line bg-surface px-3 py-2 text-[13px] leading-relaxed text-fg placeholder:text-fg-3 transition focus:border-line-strong focus:outline-none focus:ring-3 focus:ring-[var(--ring)]";
 
-/** The submit form for one recording, prefilled from the settings' templates. */
-export function UploadDialog({ file, onClose }: { file: MediaFile | null; onClose: () => void }) {
+/**
+ * The submit form, prefilled from the settings' templates (using the first file). Several files
+ * become the parts (P1, P2, …) of one submission, in the order given.
+ */
+export function UploadDialog({ files, onClose }: { files: MediaFile[] | null; onClose: () => void }) {
+  const file = files?.[0] ?? null;
   const account = useStore((s) => s.biliAccount);
   const [form, setForm] = useState<UploadForm | null>(null);
   const [saving, setSaving] = useState(false);
@@ -239,7 +243,7 @@ export function UploadDialog({ file, onClose }: { file: MediaFile | null; onClos
     if (!file || !form) return;
     setSaving(true);
     try {
-      await api.addUpload([file.path], form);
+      await api.addUpload(files!.map((f) => f.path), form);
       toast.success("已加入投稿队列", {
         description: "上传进度可以在「投稿」页查看",
         action: { label: "查看", onClick: () => (location.hash = "#/uploads") },
@@ -257,7 +261,7 @@ export function UploadDialog({ file, onClose }: { file: MediaFile | null; onClos
       open={!!file}
       onOpenChange={(o) => !o && onClose()}
       title="投稿到 B站"
-      description={file?.name}
+      description={files && files.length > 1 ? `${files.length} 个文件，投成同一个稿件的 ${files.length} 个分P（按时间顺序）` : file?.name}
       width={600}
       footer={
         <>
@@ -321,6 +325,9 @@ export function UploadDialog({ file, onClose }: { file: MediaFile | null; onClos
           </Field>
           <Field label="简介">
             <textarea rows={4} value={form.desc} onChange={(e) => set("desc", e.target.value)} className={textareaClass} />
+          </Field>
+          <Field inline label="仅自己可见" hint="审核通过后也只有你自己能看到，之后可以在 B站稿件管理里改成公开">
+            <Switch checked={form.only_self} onChange={(v) => set("only_self", v)} label="仅自己可见" />
           </Field>
           <p className="text-[12px] leading-relaxed text-fg-3">
             封面会从视频里自动截取一帧。投稿后需要 B站审核，通过后才会公开。

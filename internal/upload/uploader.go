@@ -61,6 +61,7 @@ type Request struct {
 	Tid       int      `json:"tid"`
 	Copyright int      `json:"copyright"`
 	Source    string   `json:"source"`
+	OnlySelf  bool     `json:"only_self"`
 	RoomID    string   `json:"-"`
 }
 
@@ -308,7 +309,7 @@ func (u *Uploader) Enqueue(r Request) (TaskView, error) {
 	}
 	t := store.UploadTask{
 		ID: newID(), Files: r.Files, Title: r.Title, Desc: r.Desc, Tags: r.Tags, Tid: r.Tid, Copyright: r.Copyright,
-		Source: r.Source, RoomID: r.RoomID, State: store.UploadQueued, Total: total, CreatedAt: time.Now(),
+		Source: r.Source, OnlySelf: r.OnlySelf, RoomID: r.RoomID, State: store.UploadQueued, Total: total, CreatedAt: time.Now(),
 	}
 	u.st.Uploads.Update(func(d *store.UploadData) { d.Tasks = append(d.Tasks, t) })
 	slog.Info("bilibili: upload queued", "title", t.Title, "files", len(t.Files))
@@ -535,10 +536,14 @@ func (u *Uploader) upload(ctx context.Context, t store.UploadTask) (string, erro
 		slog.Warn("bilibili: cover upload failed, Bilibili will pick one", "err", err)
 		cover = ""
 	}
-	return u.c.Submit(ctx, acct, Archive{
+	a := Archive{
 		Copyright: t.Copyright, Source: t.Source, Tid: t.Tid, Cover: cover, Title: t.Title, Desc: t.Desc,
 		Tag: t.Tags, Videos: videos,
-	})
+	}
+	if t.OnlySelf {
+		a.IsOnlySelf = 1
+	}
+	return u.c.Submit(ctx, acct, a)
 }
 
 // coverFor grabs a frame a little into the video (the first seconds are often black or a loading screen).
@@ -660,6 +665,7 @@ func (u *Uploader) SessionSaved(room store.Room, anchor, title string, start tim
 	}
 	r := u.Draft(videos, v)
 	r.RoomID = room.ID
+	r.OnlySelf = u.settings().Bool("bili_upload_auto_private")
 	if _, err := u.Enqueue(r); err != nil {
 		slog.Error("bilibili: auto upload not queued", "anchor", anchor, "err", err)
 	}

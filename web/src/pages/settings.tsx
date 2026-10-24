@@ -259,6 +259,10 @@ const BILI_ITEMS: Item[] = [
     options: [{ value: "1", label: "自制" }, { value: "2", label: "转载" }],
     hint: "录别人的直播应选转载，来源会自动填直播间链接",
   },
+  {
+    key: "bili_upload_auto_private", label: "自动投稿仅自己可见", kind: "switch",
+    hint: "下播后自动投的稿件只有你自己能看到，确认没问题后再到 B站稿件管理里改成公开。手动投稿在投稿窗口里单独选",
+  },
   { key: "bili_upload_min_minutes", label: "自动投稿最短时长", kind: "number", suffix: "分钟", hint: "开了「下播后自动投稿」的直播间，录像短于这个时长就不投稿，避免把开播几秒就断的录像传上去" },
 ];
 

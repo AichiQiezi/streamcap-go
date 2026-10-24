@@ -87,7 +87,9 @@ func toJSON(v monitor.View) recJSON {
 	out.LiveTitle = strPtr(s.LiveTitle)
 	out.StatusInfo = strPtr(s.Detail)
 	out.LastError = strPtr(s.LastError)
-	out.RecordingDir = strPtr(firstNonEmpty(s.Dir, r.RecordDir))
+	// Only the room's own folder: the edit form round-trips this field, and the session's folder
+	// (platform/streamer subfolders included) would become the room's root and nest another level.
+	out.RecordingDir = strPtr(r.RecordDir)
 	if r.BitrateK > 0 {
 		b := r.BitrateK
 		out.VideoBitrate = &b

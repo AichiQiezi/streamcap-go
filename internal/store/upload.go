@@ -38,6 +38,7 @@ type UploadTask struct {
 	Tid       int    `json:"tid"`
 	Copyright int    `json:"copyright"` // 1 自制, 2 转载
 	Source    string `json:"source"`
+	OnlySelf  bool   `json:"only_self,omitempty"` // 仅自己可见
 	// RoomID is set for tasks queued automatically after a live.
 	RoomID string `json:"room_id,omitempty"`
 

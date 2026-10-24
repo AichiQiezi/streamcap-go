@@ -117,7 +117,7 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
       segment_record: f.segment,
       segment_time: f.segmentTime,
       video_bitrate: AUDIO.has(f.format) ? null : bitrate,
-      recording_dir: f.dir.trim() || null,
+      recording_dir: f.dir.trim(), // "" clears a custom folder; null would leave it unchanged
       scheduled_recording: f.scheduled,
       scheduled_start_time: f.scheduled ? f.schedStart : null,
       monitor_hours: f.scheduled ? f.schedHours : null,

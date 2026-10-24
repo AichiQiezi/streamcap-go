@@ -602,6 +602,7 @@ type Archive struct {
 	Videos       []Video `json:"videos"`
 	NoReprint    int     `json:"no_reprint"`
 	OpenElec     int     `json:"open_elec"`
+	IsOnlySelf   int     `json:"is_only_self"` // 1: 仅自己可见
 }
 
 type subOpts struct {

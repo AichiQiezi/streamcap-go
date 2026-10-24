@@ -52,6 +52,7 @@ function TaskRow({ t, onRemove }: { t: UploadTask; onRemove: (t: UploadTask) => 
             </span>
             <span className="font-mono tabular">{bytes(t.total)}</span>
             <span>{t.copyright === 2 ? "转载" : "自制"}</span>
+            {t.only_self && <span>仅自己可见</span>}
             {t.room_id && <span>下播后自动投稿</span>}
             <span title={new Date(when * 1000).toLocaleString()}>{ago(when)}</span>
           </div>
@@ -93,7 +94,7 @@ function TaskRow({ t, onRemove }: { t: UploadTask; onRemove: (t: UploadTask) => 
       {t.state === "failed" && t.error && <div className="mt-2 rounded-lg bg-err/8 px-3 py-2 text-[12px] leading-relaxed break-all text-err">{t.error}</div>}
       {t.state === "done" && (
         <div className="mt-1.5 text-[12px] text-fg-3">
-          稿件 <span className="font-mono text-fg-2">{t.bvid}</span> 已提交，B站审核通过后公开
+          稿件 <span className="font-mono text-fg-2">{t.bvid}</span> 已提交，{t.only_self ? "审核通过后仅自己可见" : "B站审核通过后公开"}
         </div>
       )}
     </div>

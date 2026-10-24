@@ -99,6 +99,7 @@ func (s *Server) uploadDraft(w http.ResponseWriter, r *http.Request) {
 	d := s.up.Draft([]string{full}, s.up.VarsForFile(full))
 	writeJSON(w, map[string]any{
 		"title": d.Title, "desc": d.Desc, "tags": d.Tags, "tid": d.Tid, "copyright": d.Copyright, "source": d.Source,
+		"only_self": d.OnlySelf,
 	})
 }
 
@@ -111,6 +112,7 @@ func (s *Server) addUpload(w http.ResponseWriter, r *http.Request) {
 		Tid       int      `json:"tid"`
 		Copyright int      `json:"copyright"`
 		Source    string   `json:"source"`
+		OnlySelf  bool     `json:"only_self"`
 	}
 	if !decode(w, r, &in) {
 		return
@@ -119,7 +121,8 @@ func (s *Server) addUpload(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusConflict, "请先在「设置 → B站投稿」扫码登录")
 		return
 	}
-	req := upload.Request{Title: in.Title, Desc: in.Desc, Tags: in.Tags, Tid: in.Tid, Copyright: in.Copyright, Source: in.Source}
+	req := upload.Request{Title: in.Title, Desc: in.Desc, Tags: in.Tags, Tid: in.Tid, Copyright: in.Copyright, Source: in.Source,
+		OnlySelf: in.OnlySelf}
 	for _, p := range in.Paths {
 		full, ok := s.resolveFile(w, p)
 		if !ok {
