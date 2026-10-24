@@ -128,3 +128,22 @@ func TestLayoutKeepsPortraitFacesClear(t *testing.T) {
 		}
 	}
 }
+
+func TestWriterFlushesOnATimer(t *testing.T) {
+	old := FlushEvery
+	FlushEvery = 20 * time.Millisecond
+	t.Cleanup(func() { FlushEvery = old })
+	path := filepath.Join(t.TempDir(), "q.danmaku.jsonl")
+	w, err := Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	w.Write(platform.Danmaku{At: at(1), Text: "a quiet room's only comment"})
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if got, _ := Read(path); len(got) == 1 {
+			return // reached the file without waiting for more comments or Close
+		}
+	}
+	t.Fatal("a single comment never reached the file before Close")
+}

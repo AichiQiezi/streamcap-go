@@ -1,6 +1,6 @@
 # 抖音弹幕录制方案
 
-状态：已实现（macOS WKWebView + Windows WebView2），待真机验证（2026-10-19）
+状态：已实现；macOS 已用真实直播间验证，Windows 只验证过编译（2026-10-19）
 
 ## 目标
 
@@ -97,6 +97,15 @@ monitor：这一场结束 ──关──▶ 关闭 WebView
 | 5 | Windows：窗口移到屏幕外、不在任务栏和 Alt+Tab 里，右键菜单和开发者工具已关 | 看不到窗口，弹幕照常 |
 
 任意一项不通过就停下来重新评估，不进入完整开发。
+
+## 验证记录
+
+- macOS，真实直播间（交个朋友直播间、与辉同行）：访客身份能收到弹幕；2 分钟收到 134 条，生成的 `.ass` 叠在画面上位置、时间正常。
+- 真实帧里 `payloadEncoding` 是 `"pb"`，gzip 只写在 `compress_type` 帧头里：按 gzip 文件头判断解压（最初只认 `"gzip"`，一条都解不出来）。真实帧（已匿名化）放在 `internal/platform/douyin/testdata/push_frames.bin`。
+- WebKit 的内容拦截规则不支持 `|`，写成一条规则会编译失败、视频照样加载：改成每个扩展名一条。
+- 在有后台网页时持有 `NSActivityUserInitiatedAllowingIdleSystemSleep`，避免窗口收进菜单栏后 App Nap 降频导致断线。
+- **后台网页被当成「不可见」，弹幕十几秒后就停**（2026-10-20 发现）：窗口放在屏幕外，WebKit 判定页面 `visibilityState=hidden`，定时器被节流，页面的心跳发不出去，开头那一批之后就再也收不到帧（同一直播间 200 秒只收到头 20 秒的 100 条）；之前 90 秒的测试只统计总数，被开头那一批掩盖了。修复：给后台网页关掉窗口遮挡检测（`_setWindowOcclusionDetectionEnabled:NO`），页面始终是 `visible`。修复后同一直播间 200 秒收到 962 条、每 10 秒都均匀；主窗口关掉、切到别的应用后 180 秒 1075 条，同样均匀。
+- 复测：`scripts/e2e-danmaku.sh <直播间链接> [秒数] [--dump 帧文件]`，看输出里的 `per 30s` 是否每段都有数，而不只是看总数。
 
 ## 风险
 

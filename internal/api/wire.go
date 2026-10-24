@@ -43,14 +43,16 @@ type recJSON struct {
 }
 
 type statsJSON struct {
-	File         *string `json:"file"`
-	SizeBytes    int64   `json:"size_bytes"`
-	SpeedBps     int64   `json:"speed_bps"`
-	Width        *int    `json:"width"`
-	Height       *int    `json:"height"`
+	File         *string  `json:"file"`
+	SizeBytes    int64    `json:"size_bytes"`
+	SpeedBps     int64    `json:"speed_bps"`
+	Width        *int     `json:"width"`
+	Height       *int     `json:"height"`
 	FPS          *float64 `json:"fps"`
-	VCodec       *string `json:"vcodec"`
-	ThumbVersion int64   `json:"thumb_version"`
+	VCodec       *string  `json:"vcodec"`
+	ThumbVersion int64    `json:"thumb_version"`
+	// Danmaku: comments recorded in this session so far; null when the session records none.
+	Danmaku *int `json:"danmaku"`
 }
 
 func toJSON(v monitor.View) recJSON {
@@ -73,6 +75,7 @@ func toJSON(v monitor.View) recJSON {
 		Stats: statsJSON{
 			File: strPtr(s.File), SizeBytes: s.Bytes, SpeedBps: int64(s.SpeedBps),
 			Width: intPtr(s.Width), Height: intPtr(s.Height), VCodec: strPtr(s.Codec), ThumbVersion: s.ThumbVersion,
+			Danmaku: danmakuCount(s),
 		},
 	}
 	if s.FPS > 0 {
@@ -102,20 +105,20 @@ func toJSON(v monitor.View) recJSON {
 
 // recInput mirrors the UI's RecInput; pointers distinguish "absent" from zero values.
 type recInput struct {
-	URL                string   `json:"url"`
-	StreamerName       *string  `json:"streamer_name"`
-	Quality            *string  `json:"quality"`
-	RecordFormat       *string  `json:"record_format"`
-	SegmentRecord      *bool    `json:"segment_record"`
-	SegmentTime        *string  `json:"segment_time"`
-	VideoBitrate       *int     `json:"video_bitrate"`
-	RecordingDir       *string  `json:"recording_dir"`
-	MonitorStatus      *bool    `json:"monitor_status"`
-	ScheduledRecording *bool    `json:"scheduled_recording"`
-	ScheduledStartTime *string  `json:"scheduled_start_time"`
-	MonitorHours       *string  `json:"monitor_hours"`
-	EnabledMessagePush *bool    `json:"enabled_message_push"`
-	OnlyNotifyNoRecord *bool    `json:"only_notify_no_record"`
+	URL                string  `json:"url"`
+	StreamerName       *string `json:"streamer_name"`
+	Quality            *string `json:"quality"`
+	RecordFormat       *string `json:"record_format"`
+	SegmentRecord      *bool   `json:"segment_record"`
+	SegmentTime        *string `json:"segment_time"`
+	VideoBitrate       *int    `json:"video_bitrate"`
+	RecordingDir       *string `json:"recording_dir"`
+	MonitorStatus      *bool   `json:"monitor_status"`
+	ScheduledRecording *bool   `json:"scheduled_recording"`
+	ScheduledStartTime *string `json:"scheduled_start_time"`
+	MonitorHours       *string `json:"monitor_hours"`
+	EnabledMessagePush *bool   `json:"enabled_message_push"`
+	OnlyNotifyNoRecord *bool   `json:"only_notify_no_record"`
 }
 
 func (in recInput) toRoomInput() monitor.RoomInput {
@@ -169,4 +172,12 @@ func firstNonEmpty(vs ...string) string {
 		}
 	}
 	return ""
+}
+
+func danmakuCount(s monitor.State) *int {
+	if !s.DanmakuOn {
+		return nil
+	}
+	n := s.Danmaku
+	return &n
 }

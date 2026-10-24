@@ -31,12 +31,18 @@ type line struct {
 	Mode  int    `json:"m,omitempty"`
 }
 
+// FlushEvery is how often buffered comments reach the file: often enough that the file visibly
+// grows during a quiet live and a crash loses little, rarely enough to stay cheap on a busy one.
+var FlushEvery = 10 * time.Second
+
 // Writer appends comments to a .jsonl file. Safe for concurrent use.
 type Writer struct {
-	mu sync.Mutex
-	f  *os.File
-	w  *bufio.Writer
-	n  int
+	mu    sync.Mutex
+	f     *os.File
+	w     *bufio.Writer
+	n     int
+	dirty bool
+	stop  chan struct{}
 }
 
 // Create opens path for appending (a resumed session keeps writing the same file).
@@ -45,7 +51,29 @@ func Create(path string) (*Writer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Writer{f: f, w: bufio.NewWriter(f)}, nil
+	w := &Writer{f: f, w: bufio.NewWriter(f), stop: make(chan struct{})}
+	go w.flusher()
+	return w, nil
+}
+
+// flusher writes buffered comments out every FlushEvery; a lone comment in a quiet room would
+// otherwise sit in the buffer until the next one, or until the session ends.
+func (w *Writer) flusher() {
+	t := time.NewTicker(FlushEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-w.stop:
+			return
+		case <-t.C:
+			w.mu.Lock()
+			if w.w != nil && w.dirty {
+				_ = w.w.Flush()
+				w.dirty = false
+			}
+			w.mu.Unlock()
+		}
+	}
 }
 
 // Write records one comment.
@@ -57,9 +85,8 @@ func (w *Writer) Write(d platform.Danmaku) {
 		return
 	}
 	_, _ = w.w.Write(append(b, '\n'))
-	if w.n++; w.n%20 == 0 {
-		_ = w.w.Flush() // a crash loses at most a few comments
-	}
+	w.n++
+	w.dirty = true
 }
 
 // Count is how many comments were written.
@@ -76,6 +103,7 @@ func (w *Writer) Close() error {
 	if w.w == nil {
 		return nil
 	}
+	close(w.stop)
 	err := w.w.Flush()
 	if cerr := w.f.Close(); err == nil {
 		err = cerr

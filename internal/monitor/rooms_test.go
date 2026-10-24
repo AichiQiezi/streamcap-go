@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AichiQiezi/streamcap-go/internal/danmaku"
 	"github.com/AichiQiezi/streamcap-go/internal/notify"
 	"github.com/AichiQiezi/streamcap-go/internal/platform"
 	"github.com/AichiQiezi/streamcap-go/internal/store"
@@ -31,13 +32,13 @@ func (fakeSite) Match(raw string) bool { return strings.Contains(raw, "://fake.t
 // fakeLive scripts whether a fake.test link is live (path -> *atomic.Bool); absent means offline.
 var fakeLive sync.Map
 
-func (fakeSite) Resolve(_ context.Context, raw string, _ platform.Options) (*platform.StreamInfo, error) {
+func (fakeSite) Resolve(_ context.Context, raw string, opt platform.Options) (*platform.StreamInfo, error) {
 	u, _ := url.Parse(raw)
 	live := false
 	if v, ok := fakeLive.Load(u.Path); ok {
 		live = v.(*atomic.Bool).Load()
 	}
-	return &platform.StreamInfo{Platform: "fake", Anchor: "Bob", Ident: fakeIdents[u.Path], IsLive: live}, nil
+	return &platform.StreamInfo{Platform: "fake", Anchor: "Bob", Ident: fakeIdents[u.Path], IsLive: live, Quality: opt.Quality}, nil
 }
 func (fakeSite) Canonical(_ context.Context, raw string, _ platform.Options) (platform.Canonical, error) {
 	time.Sleep(30 * time.Millisecond)
@@ -308,5 +309,33 @@ func TestReorder(t *testing.T) {
 	}
 	if strings.Join(broadcast, ",") != strings.Join(got, ",") {
 		t.Fatalf("broadcast %v, want the new order %v", broadcast, got)
+	}
+}
+
+// Danmaku makes fakeSite a comment source: it sends fakeComments, then waits for the session to end.
+func (fakeSite) Danmaku(ctx context.Context, _ string, _ platform.Options, emit func(platform.Danmaku)) error {
+	for _, c := range fakeComments {
+		emit(platform.Danmaku{At: time.Now(), Text: c})
+	}
+	<-ctx.Done()
+	return nil
+}
+
+var fakeComments = []string{"第一条", "第二条"}
+
+func TestDanmakuCountIsShownWhileRecording(t *testing.T) {
+	m := newTestManager(t)
+	created, _ := add(m, "https://fake.test/u/bob")
+	room := created[0].Room
+	rt := newRuntime(m, room.ID)
+	d := rt.startDanmaku(room, m.Settings(), t.TempDir(), "s")
+	if d == nil {
+		t.Fatal("no comment recorder for a site that offers comments")
+	}
+	eventually(t, "the count to reach 2", func() bool { st := rt.snapshot(); return st.DanmakuOn && st.Danmaku == 2 })
+	d.stop()
+	got, err := danmaku.Read(d.path)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("file holds %d comments, %v", len(got), err)
 	}
 }

@@ -44,6 +44,11 @@ export const RecRow = memo(function RecRow({ r, selected, onSelect, onEdit, onDe
           <div className="flex min-w-0 items-center gap-1">
             <RecordThisLiveButton r={r} className="-ml-1.5" />
             <span className="truncate text-[12px] text-fg-3">{r.live_title || r.url.replace(/^https?:\/\/(www\.)?/, "")}</span>
+            {recording && r.stats.danmaku != null && (
+              <span className="shrink-0 text-[12px] text-fg-3 tabular" title="本场已录弹幕">
+                · 弹幕 {r.stats.danmaku}
+              </span>
+            )}
           </div>
         </div>
       </div>

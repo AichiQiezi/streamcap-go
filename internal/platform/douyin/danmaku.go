@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -25,8 +27,8 @@ func (r resolver) Danmaku(ctx context.Context, roomURL string, opt platform.Opti
 	if platform.OpenWatcher == nil {
 		return errors.New("douyin danmaku: 这个运行方式没有内置浏览器，无法读取弹幕")
 	}
-	webRid, err := r.watchRid(ctx, roomURL, opt)
-	if err != nil {
+	webRid, err := r.watchRidRetrying(ctx, roomURL, opt)
+	if err != nil || ctx.Err() != nil {
 		return err
 	}
 	page := "https://live.douyin.com/" + url.PathEscape(webRid)
@@ -42,6 +44,10 @@ func (r resolver) Danmaku(ctx context.Context, roomURL string, opt platform.Opti
 	}
 	defer closePage()
 	slog.Info("douyin danmaku: watching page", "room", roomURL, "page", page)
+	dump := openFrameDump()
+	if dump != nil {
+		defer dump.Close()
+	}
 
 	for {
 		select {
@@ -49,6 +55,9 @@ func (r resolver) Danmaku(ctx context.Context, roomURL string, opt platform.Opti
 			return nil
 		case b := <-frames:
 			now := time.Now()
+			if dump != nil {
+				writeFrame(dump, b)
+			}
 			if err := decodePushFrame(b, func(d platform.Danmaku) {
 				d.At = now
 				emit(d)
@@ -59,9 +68,80 @@ func (r resolver) Danmaku(ctx context.Context, roomURL string, opt platform.Opti
 	}
 }
 
+// openFrameDump opens $STREAMCAP_DANMAKU_DUMP for appending raw frames (debugging and refreshing the
+// test fixture, see testdata/README.md); nil when unset.
+func openFrameDump() *os.File {
+	path := os.Getenv("STREAMCAP_DANMAKU_DUMP")
+	if path == "" {
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		slog.Warn("douyin danmaku: cannot open frame dump", "file", path, "err", err)
+		return nil
+	}
+	slog.Info("douyin danmaku: dumping raw frames", "file", path)
+	return f
+}
+
+// writeFrame appends one frame as a little-endian uint32 length followed by its bytes.
+func writeFrame(w io.Writer, b []byte) {
+	var n [4]byte
+	binary.LittleEndian.PutUint32(n[:], uint32(len(b)))
+	_, _ = w.Write(n[:])
+	_, _ = w.Write(b)
+}
+
+// readFrames splits a dump written by writeFrame.
+func readFrames(raw []byte) ([][]byte, error) {
+	var out [][]byte
+	for len(raw) > 0 {
+		if len(raw) < 4 {
+			return out, errMalformed
+		}
+		n := int(binary.LittleEndian.Uint32(raw))
+		if n > len(raw)-4 {
+			return out, errMalformed
+		}
+		out = append(out, raw[4:4+n])
+		raw = raw[4+n:]
+	}
+	return out, nil
+}
+
 // DanmakuReady reports that the hidden page watcher is available (the macOS/Windows window and
 // menu-bar/tray modes; not -headless, which has no browser).
 func (resolver) DanmakuReady() bool { return platform.OpenWatcher != nil }
+
+// Retry pacing for finding the room when the session starts (tests shrink it).
+var (
+	ridRetryBase = 2 * time.Second
+	ridRetryMax  = time.Minute
+)
+
+// watchRidRetrying keeps trying to find the room: a failure at the start of a session (network,
+// risk control) would otherwise lose the comments for the whole live. Only a link that can never be
+// a room gives up.
+func (r resolver) watchRidRetrying(ctx context.Context, roomURL string, opt platform.Options) (string, error) {
+	for attempt := 0; ; attempt++ {
+		rid, err := r.watchRid(ctx, roomURL, opt)
+		if err == nil || errors.Is(err, platform.ErrUnsupported) || ctx.Err() != nil {
+			return rid, err
+		}
+		wait := min(ridRetryBase<<min(attempt, 6), ridRetryMax)
+		slog.Warn("douyin danmaku: room not found yet, retrying", "room", roomURL, "err", err, "in", wait)
+		select {
+		case <-ctx.Done():
+			return "", nil
+		case <-time.After(wait):
+		}
+	}
+}
+
+// resolveRoom resolves a link for watchRid (tests replace it).
+var resolveRoom = func(ctx context.Context, r resolver, roomURL string, opt platform.Options) (*platform.StreamInfo, error) {
+	return r.Resolve(ctx, roomURL, opt)
+}
 
 // watchRid finds the 抖音号 (web_rid) to load in the page. A live.douyin.com link already carries it;
 // other shapes (short shares, profile links) go through the normal resolver.
@@ -71,7 +151,7 @@ func (r resolver) watchRid(ctx context.Context, roomURL string, opt platform.Opt
 			return segs[0], nil
 		}
 	}
-	info, err := r.Resolve(ctx, roomURL, opt)
+	info, err := resolveRoom(ctx, r, roomURL, opt)
 	if err != nil {
 		return "", err
 	}

@@ -59,9 +59,15 @@ func (rt *runtime) startDanmaku(room store.Room, s store.Settings, dir, base str
 	ctx, cancel := context.WithCancel(context.Background())
 	d := &dmRecorder{path: path, w: w, cancel: cancel, done: make(chan struct{})}
 	opt := platform.Options{Cookie: rt.m.Cookies()[room.Platform], Proxy: rt.m.proxyFor(room.Platform, s)}
+	rt.update(func(st *State) { st.DanmakuOn, st.Danmaku = true, 0 })
+	record := func(c platform.Danmaku) {
+		w.Write(c)
+		n := w.Count()
+		rt.update(func(st *State) { st.Danmaku = n })
+	}
 	go func() {
 		defer close(d.done)
-		if err := src.Danmaku(ctx, room.URL, opt, w.Write); err != nil {
+		if err := src.Danmaku(ctx, room.URL, opt, record); err != nil {
 			slog.Warn("danmaku: stopped", "room", room.URL, "err", err)
 		}
 	}()

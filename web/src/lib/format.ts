@@ -12,7 +12,8 @@ export function bytes(n: number | null | undefined, digits = 2): string {
     v /= 1024;
     u += 1;
   }
-  const fixed = u === 0 ? String(Math.round(v)) : v.toFixed(digits).replace(/\.?0+$/, "");
+  // Trim trailing zeros of the fraction only: with digits = 0 there is none, and "460" must stay 460.
+  const fixed = u === 0 ? String(Math.round(v)) : v.toFixed(digits).replace(/\.(\d*?)0+$/, (_, d) => (d ? `.${d}` : ""));
   return `${fixed} ${UNITS[u]}`;
 }
 

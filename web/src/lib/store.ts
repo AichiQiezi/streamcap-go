@@ -14,6 +14,7 @@ const EMPTY_STATS: RecStats = {
   fps: null,
   vcodec: null,
   thumb_version: 0,
+  danmaku: null,
 };
 
 const EMPTY_OPTIONS: OptionsInfo = { qualities: [], video_formats: [], audio_formats: [] };

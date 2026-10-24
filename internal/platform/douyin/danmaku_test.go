@@ -3,7 +3,12 @@ package douyin
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
+	"errors"
+	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/AichiQiezi/streamcap-go/internal/platform"
 )
@@ -112,5 +117,138 @@ func TestEmojiText(t *testing.T) {
 		if got := emojiText(in); got != want {
 			t.Errorf("emojiText(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// fakeWatcher stands in for the hidden page: it records what was opened and lets the test push
+// frames as the page's websocket would.
+type fakeWatcher struct {
+	mu      sync.Mutex
+	opened  []string
+	onFrame func([]byte)
+	closed  chan struct{}
+}
+
+func installFakeWatcher(t *testing.T) *fakeWatcher {
+	f := &fakeWatcher{closed: make(chan struct{})}
+	old := platform.OpenWatcher
+	platform.OpenWatcher = func(url string, onFrame func([]byte)) func() {
+		f.mu.Lock()
+		f.opened, f.onFrame = append(f.opened, url), onFrame
+		f.mu.Unlock()
+		var once sync.Once
+		return func() { once.Do(func() { close(f.closed) }) }
+	}
+	t.Cleanup(func() { platform.OpenWatcher = old })
+	return f
+}
+
+func (f *fakeWatcher) push(b []byte) {
+	f.mu.Lock()
+	fn := f.onFrame
+	f.mu.Unlock()
+	fn(b)
+}
+
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if cond() {
+			return
+		}
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}
+
+func TestDanmakuWatchesThePageAndClosesIt(t *testing.T) {
+	f := installFakeWatcher(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	var mu sync.Mutex
+	var got []platform.Danmaku
+	done := make(chan error, 1)
+	go func() {
+		done <- resolver{}.Danmaku(ctx, "https://live.douyin.com/646454278948", platform.Options{}, func(d platform.Danmaku) {
+			mu.Lock()
+			got = append(got, d)
+			mu.Unlock()
+		})
+	}()
+	waitFor(t, "the page to open", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return len(f.opened) == 1 })
+	if f.opened[0] != "https://live.douyin.com/646454278948" {
+		t.Fatalf("opened %q", f.opened[0])
+	}
+
+	var z bytes.Buffer
+	zw := gzip.NewWriter(&z)
+	zw.Write(chatMessage("观众", "[玫瑰]晚上好"))
+	zw.Close()
+	header := append(pbLen(1, []byte("compress_type")), pbLen(2, []byte("gzip"))...)
+	frame := append(append(pbLen(5, header), pbLen(6, []byte("pb"))...), pbLen(8, z.Bytes())...)
+	before := time.Now()
+	f.push(frame)
+	f.push([]byte{0xff}) // garbage from the page must not stop the stream
+	f.push(frame)
+	waitFor(t, "two comments", func() bool { mu.Lock(); defer mu.Unlock(); return len(got) == 2 })
+	if d := got[0]; d.Text != "🌹晚上好" || d.User != "观众" || d.At.Before(before) {
+		t.Fatalf("comment %+v", d)
+	}
+
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("Danmaku returned %v after cancel", err)
+	}
+	select {
+	case <-f.closed:
+	case <-time.After(time.Second):
+		t.Fatal("the page was not closed when the session ended")
+	}
+}
+
+func TestDanmakuRetriesFindingTheRoom(t *testing.T) {
+	f := installFakeWatcher(t)
+	oldResolve, oldBase := resolveRoom, ridRetryBase
+	ridRetryBase = time.Millisecond
+	calls := 0
+	resolveRoom = func(context.Context, resolver, string, platform.Options) (*platform.StreamInfo, error) {
+		if calls++; calls < 3 {
+			return nil, errors.New("risk control")
+		}
+		return &platform.StreamInfo{Ident: "97031554167"}, nil
+	}
+	t.Cleanup(func() { resolveRoom, ridRetryBase = oldResolve, oldBase })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		_ = resolver{}.Danmaku(ctx, "https://v.douyin.com/y9gIe0Pibig/", platform.Options{}, func(platform.Danmaku) {})
+	}()
+	waitFor(t, "the page to open after retries", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return len(f.opened) == 1 })
+	if calls != 3 || f.opened[0] != "https://live.douyin.com/97031554167" {
+		t.Fatalf("calls %d, opened %v", calls, f.opened)
+	}
+}
+
+func TestDanmakuGivesUpOnALinkThatIsNoRoom(t *testing.T) {
+	installFakeWatcher(t)
+	old := resolveRoom
+	resolveRoom = func(context.Context, resolver, string, platform.Options) (*platform.StreamInfo, error) {
+		return nil, fmt.Errorf("douyin: %w", platform.ErrUnsupported)
+	}
+	t.Cleanup(func() { resolveRoom = old })
+	err := resolver{}.Danmaku(context.Background(), "https://www.douyin.com/video/1", platform.Options{}, func(platform.Danmaku) {})
+	if !errors.Is(err, platform.ErrUnsupported) {
+		t.Fatalf("err = %v, want ErrUnsupported without retrying", err)
+	}
+}
+
+func TestDanmakuWithoutABrowser(t *testing.T) {
+	old := platform.OpenWatcher
+	platform.OpenWatcher = nil
+	t.Cleanup(func() { platform.OpenWatcher = old })
+	if (resolver{}).DanmakuReady() {
+		t.Fatal("ready without a page watcher")
+	}
+	if err := (resolver{}).Danmaku(context.Background(), "https://live.douyin.com/1", platform.Options{}, func(platform.Danmaku) {}); err == nil {
+		t.Fatal("no error without a page watcher")
 	}
 }

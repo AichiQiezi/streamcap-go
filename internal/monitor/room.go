@@ -65,6 +65,13 @@ var (
 	// handoffLead: switch to a freshly resolved URL this long before the current one expires.
 	handoffLead = 60 * time.Second
 	thumbEvery  = 30 * time.Second
+	// liveThumbEvery: how often a live room that isn't recording gets a fresh cover. With no file
+	// to take it from, each one is a short pull of the stream at the lowest quality.
+	liveThumbEvery = 60 * time.Second
+	// grabStreamThumb takes that cover (tests fake it: no ffmpeg).
+	grabStreamThumb = func(ctx context.Context, info *platform.StreamInfo, proxy, dest string) error {
+		return media.StreamThumbnail(ctx, info.RecordURL, info.Headers, proxy, dest)
+	}
 )
 
 // State is the runtime state shown in the UI.
@@ -90,6 +97,10 @@ type State struct {
 	FPS          float64
 	Codec        string
 	ThumbVersion int64
+
+	// DanmakuOn: this session records comments; Danmaku is how many it has so far.
+	DanmakuOn bool
+	Danmaku   int
 }
 
 // Duration is how long the current session has recorded so far.
@@ -158,6 +169,8 @@ type runtime struct {
 		busy   bool
 		at     time.Time
 		probed string
+		cancel context.CancelFunc // a cover being pulled from the stream (liveThumb)
+		failed bool               // liveThumb's last pull failed (and that was logged)
 	}
 
 	ctlMu        sync.Mutex
@@ -444,6 +457,11 @@ func (rt *runtime) loop(ctx context.Context, done chan struct{}) {
 		rt.update(func(st *State) { st.IsLive, st.LiveTitle, st.CheckedAt, st.Detail = true, info.Title, now, "" })
 		if rt.watch == nil {
 			rt.watch = &liveWatch{since: now, anchor: displayName(room, info)}
+			// The cover on file is from an earlier live: don't show it as this one's picture.
+			rt.mu.Lock()
+			rt.thumb.at = time.Time{}
+			rt.mu.Unlock()
+			rt.update(func(st *State) { st.ThumbVersion = 0 })
 		}
 		rt.watch.lastLive = now
 		if w := rt.watch; !w.announced && alerts(room) {
@@ -459,6 +477,7 @@ func (rt *runtime) loop(ctx context.Context, done chan struct{}) {
 				phase = PhaseError
 			}
 			rt.update(func(st *State) { st.Phase, st.Detail = phase, reason })
+			rt.liveThumb(ctx, room, s)
 			rt.sleep(ctx, jitter(interval))
 			continue
 		}
@@ -508,6 +527,11 @@ func (rt *runtime) skipReason(room store.Room, _ *platform.StreamInfo) string {
 }
 
 func (rt *runtime) beginSession(room store.Room, info *platform.StreamInfo, s store.Settings) {
+	rt.mu.Lock()
+	if rt.thumb.cancel != nil {
+		rt.thumb.cancel() // the recorder must not share the stream with a cover pull
+	}
+	rt.mu.Unlock()
 	now := time.Now()
 	dir, base := sessionPaths(rt.m.roomRoot(room), room, info, s, now)
 	rt.sess = &session{
@@ -556,6 +580,7 @@ func (rt *runtime) endSession(why string) time.Duration {
 	rt.sess = nil
 	rt.update(func(st *State) {
 		st.SessionStart, st.Recorded, st.PartStart, st.SpeedBps, st.File = time.Time{}, 0, time.Time{}, 0, ""
+		st.DanmakuOn, st.Danmaku = false, 0
 	})
 	room, _ := rt.m.room(rt.id)
 	s := rt.m.Settings()
@@ -815,6 +840,45 @@ func (rt *runtime) onProgress(p recorder.Progress) {
 			}
 		}(p.File)
 	}
+}
+
+// liveThumb refreshes, at most every liveThumbEvery, the cover of a room that is live but not
+// recording: from a lowest-quality resolve of its own, so the check's URL (which 录这一场 records)
+// is never pulled by anyone else. Starting a recording cancels it.
+func (rt *runtime) liveThumb(ctx context.Context, room store.Room, s store.Settings) {
+	rt.mu.Lock()
+	if rt.thumb.busy || time.Since(rt.thumb.at) < liveThumbEvery {
+		rt.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	rt.thumb.busy, rt.thumb.at, rt.thumb.cancel = true, time.Now(), cancel
+	rt.mu.Unlock()
+
+	go func() {
+		defer cancel()
+		low := room
+		low.Quality = platform.QualityLD
+		info, err := rt.m.resolve(ctx, low)
+		if err == nil && !info.IsLive {
+			err = fmt.Errorf("not live")
+		}
+		if err == nil {
+			err = grabStreamThumb(ctx, info, rt.m.proxyFor(room.Platform, s), rt.m.ThumbPath(rt.id))
+		}
+		rt.mu.Lock()
+		rt.thumb.busy, rt.thumb.cancel = false, nil
+		logIt := err != nil && ctx.Err() == nil && !rt.thumb.failed // once per run of failures
+		rt.thumb.failed = err != nil
+		rt.mu.Unlock()
+		if logIt {
+			slog.Warn("live cover failed", "room", room.URL, "err", err)
+		}
+		if err != nil {
+			return
+		}
+		rt.update(func(st *State) { st.ThumbVersion = time.Now().UnixMilli() })
+	}()
 }
 
 func describe(res recorder.Result) string {

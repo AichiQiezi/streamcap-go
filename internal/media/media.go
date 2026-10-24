@@ -1,7 +1,8 @@
-// Package media probes recordings (resolution/codec) and grabs cover thumbnails from local files.
+// Package media probes recordings (resolution/codec) and grabs cover thumbnails.
 //
-// It only ever reads files on disk — never the stream URL — because some CDNs hand out single-use
-// URLs and a second pull on the recorder's URL breaks the recording.
+// Covers of a recording come from its file on disk, never the stream URL: some CDNs hand out
+// single-use URLs and a second pull on the recorder's URL breaks the recording. Only a live room
+// that nothing records gets its cover from the stream (StreamThumbnail).
 package media
 
 import (
@@ -118,6 +119,39 @@ func Thumbnail(ctx context.Context, file, dest string) error {
 		os.Remove(tmp)
 		return err
 	}
+	return keep(tmp, dest)
+}
+
+// StreamThumbnail writes a 640px-wide JPEG of the first frame of a live stream to dest
+// (atomically). Not for a stream that is being recorded (see the package doc).
+func StreamThumbnail(ctx context.Context, url string, headers map[string]string, proxy, dest string) error {
+	ffmpeg, _ := recorder.Binaries()
+	if ffmpeg == "" {
+		return fmt.Errorf("ffmpeg not found")
+	}
+	if url == "" {
+		return fmt.Errorf("no stream url")
+	}
+	if err := acquire(ctx); err != nil {
+		return err
+	}
+	defer release()
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	tmp := dest + ".tmp.jpg"
+	args := append([]string{"-y", "-v", "error"}, recorder.InputArgs(url, headers, proxy)...)
+	args = append(args, "-i", url, "-an", "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "4", tmp)
+	cmd := exec.CommandContext(ctx, ffmpeg, args...)
+	hide(cmd)
+	if err := cmd.Run(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return keep(tmp, dest)
+}
+
+// keep moves a freshly written thumbnail into place, unless ffmpeg left it empty.
+func keep(tmp, dest string) error {
 	if st, err := os.Stat(tmp); err != nil || st.Size() == 0 {
 		os.Remove(tmp)
 		return fmt.Errorf("empty thumbnail")

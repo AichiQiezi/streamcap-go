@@ -221,6 +221,14 @@ export const RecCard = memo(function RecCard({ r, selected, onSelect, onEdit, on
               <Tip label="本次已录大小">
                 <span className="shrink-0 font-mono tabular">{bytes(r.stats.size_bytes)}</span>
               </Tip>
+              {r.stats.danmaku != null && (
+                <>
+                  <span className="h-3 w-px shrink-0 bg-line-strong" />
+                  <Tip label="本场已录弹幕">
+                    <span className="shrink-0 tabular">弹幕 {r.stats.danmaku}</span>
+                  </Tip>
+                </>
+              )}
               {r.reconnects > 0 ? (
                 <>
                   <span className="h-3 w-px shrink-0 bg-line-strong" />

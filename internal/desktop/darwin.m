@@ -3,6 +3,7 @@
 #import <Cocoa/Cocoa.h>
 #import <UserNotifications/UserNotifications.h>
 #import <WebKit/WebKit.h>
+#import <objc/message.h>
 #import <objc/runtime.h>
 #include "darwin.h"
 
@@ -210,9 +211,17 @@ char *sc_notify(const char *title, const char *body, const char *url) {
 static NSString *const scWatcherUA =
     @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
 
-// Blocks the video segments themselves (the page still gets its APIs, avatars and scripts).
+// Blocks the video itself (the page still gets its APIs, avatars and scripts). One rule per
+// extension, matched at the end of the path: WebKit's rule regexes don't support "|" (a list using
+// it fails to compile, and then nothing is blocked), and an unanchored ".ts" would also hit ".tsx".
 static NSString *const scNoVideoRules =
-    @"[{\"trigger\":{\"url-filter\":\"\\\\.(flv|m3u8|ts|m4s)\"},\"action\":{\"type\":\"block\"}}]";
+    @"["
+    @"{\"trigger\":{\"url-filter\":\"\\\\.flv([?#].*)?$\"},\"action\":{\"type\":\"block\"}},"
+    @"{\"trigger\":{\"url-filter\":\"\\\\.m3u8([?#].*)?$\"},\"action\":{\"type\":\"block\"}},"
+    @"{\"trigger\":{\"url-filter\":\"\\\\.ts([?#].*)?$\"},\"action\":{\"type\":\"block\"}},"
+    @"{\"trigger\":{\"url-filter\":\"\\\\.m4s([?#].*)?$\"},\"action\":{\"type\":\"block\"}},"
+    @"{\"trigger\":{\"url-filter\":\"\\\\.mp4([?#].*)?$\"},\"action\":{\"type\":\"block\"}}"
+    @"]";
 
 // AtDocumentStart: wrap window.WebSocket, forward frames of the comment connection as base64, and
 // keep all media muted. Read-only: nothing is modified or sent.
@@ -253,6 +262,22 @@ static NSString *const scWatcherJS =
 @property (nonatomic) BOOL closed;
 @end
 
+// While a page is being watched, keep macOS from napping the app: with the main window closed to
+// the menu bar, App Nap throttles timers and the page's heartbeat with them, and the comment
+// socket drops. System sleep stays allowed.
+static id<NSObject> scWatchActivity = nil;
+
+static void scUpdateWatchActivity(NSUInteger watchers) {
+    if (watchers > 0 && !scWatchActivity) {
+        scWatchActivity = [[NSProcessInfo processInfo]
+            beginActivityWithOptions:NSActivityUserInitiatedAllowingIdleSystemSleep
+                              reason:@"StreamCap is recording live comments"];
+    } else if (watchers == 0 && scWatchActivity) {
+        [[NSProcessInfo processInfo] endActivity:scWatchActivity];
+        scWatchActivity = nil;
+    }
+}
+
 static NSMutableDictionary<NSNumber *, SCWatcher *> *scWatchers(void) {
     static NSMutableDictionary *d;
     static dispatch_once_t once;
@@ -265,9 +290,10 @@ static NSMutableDictionary<NSNumber *, SCWatcher *> *scWatchers(void) {
 - (void)start {
     // Compiling is cached by identifier, so concurrent watchers share one list.
     [[WKContentRuleListStore defaultStore]
-        compileContentRuleListForIdentifier:@"streamcap-no-video-v1"
+        compileContentRuleListForIdentifier:@"streamcap-no-video-v2"
                      encodedContentRuleList:scNoVideoRules
                           completionHandler:^(WKContentRuleList *rules, NSError *error) {
+        if (!rules) NSLog(@"StreamCap: video-blocking rules did not compile, the page will load video: %@", error);
         dispatch_async(dispatch_get_main_queue(), ^{ [self installWithRules:rules]; });
     }];
 }
@@ -301,6 +327,15 @@ static NSMutableDictionary<NSNumber *, SCWatcher *> *scWatchers(void) {
 
     self.webView = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 1280, 800) configuration:cfg];
     self.webView.customUserAgent = scWatcherUA;
+    // WebKit treats a page whose window is off screen (or the display asleep) as hidden and
+    // throttles its timers: the page's heartbeat stops and douyin ends the comment feed within
+    // seconds. Without occlusion detection the page counts as visible while its window is ordered in.
+    SEL noOcclusion = NSSelectorFromString(@"_setWindowOcclusionDetectionEnabled:");
+    if ([self.webView respondsToSelector:noOcclusion]) {
+        ((void (*)(id, SEL, BOOL))objc_msgSend)(self.webView, noOcclusion, NO);
+    } else {
+        NSLog(@"StreamCap: cannot keep the watcher page visible; comments may stop after a few seconds");
+    }
     self.webView.navigationDelegate = self;
     self.webView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     [self.window.contentView addSubview:self.webView];
@@ -343,6 +378,7 @@ static NSMutableDictionary<NSNumber *, SCWatcher *> *scWatchers(void) {
     [self.webView removeFromSuperview];
     self.webView = nil;
     [self.window orderOut:nil];
+    [self.window close];
     self.window = nil;
 }
 
@@ -387,6 +423,7 @@ void sc_watcher_open(const char *url, long long wid) {
         w.wid = wid;
         w.url = u;
         scWatchers()[@(wid)] = w;
+        scUpdateWatchActivity(scWatchers().count);
         [w start];
     });
 }
@@ -396,6 +433,7 @@ void sc_watcher_close(long long wid) {
         SCWatcher *w = scWatchers()[@(wid)];
         if (!w) return;
         [scWatchers() removeObjectForKey:@(wid)];
+        scUpdateWatchActivity(scWatchers().count);
         [w shutdown];
     });
 }

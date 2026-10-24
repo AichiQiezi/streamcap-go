@@ -19,6 +19,8 @@ export interface RecStats {
   fps: number | null;
   vcodec: string | null;
   thumb_version: number;
+  /** Comments recorded so far this session; null when it records none. */
+  danmaku: number | null;
 }
 
 export interface Rec {

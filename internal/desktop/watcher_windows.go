@@ -126,9 +126,17 @@ func openWatcher(url string, onFrame func([]byte)) func() {
 }
 
 // watcherProfileDir is a throwaway WebView2 profile: no account state, nothing kept between runs.
+// Earlier runs' profiles are removed the first time one is needed; one still in use by another
+// running instance is locked, fails to delete and is left alone.
 func watcherProfileDir() string {
 	watcherProfileOnce.Do(func() {
 		watcherProfile = filepath.Join(os.TempDir(), fmt.Sprintf("streamcap-watch-%d", os.Getpid()))
+		old, _ := filepath.Glob(filepath.Join(os.TempDir(), "streamcap-watch-*"))
+		for _, dir := range old {
+			if dir != watcherProfile {
+				_ = os.RemoveAll(dir)
+			}
+		}
 	})
 	return watcherProfile
 }

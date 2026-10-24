@@ -18,8 +18,18 @@ var (
 	ffprobeBin string
 )
 
+// knownDirs are where package managers install ffmpeg on macOS. An app started from Finder, the
+// Dock or at login gets launchd's PATH (/usr/bin:/bin:/usr/sbin:/sbin), which has none of them:
+// PATH alone finds Homebrew's ffmpeg only when the app was started from a terminal.
+var knownDirs = func() []string {
+	if runtime.GOOS == "darwin" {
+		return []string{"/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"}
+	}
+	return nil
+}()
+
 // Binaries returns the ffmpeg and ffprobe paths: next to the executable (bundled Windows build,
-// either beside it or in an "ffmpeg" sub-folder) first, then PATH.
+// either beside it or in an "ffmpeg" sub-folder) first, then PATH, then knownDirs.
 func Binaries() (ffmpeg, ffprobe string) {
 	ffmpegOnce.Do(func() {
 		ffmpegBin = find("ffmpeg")
@@ -44,33 +54,50 @@ func find(name string) string {
 	if p, err := exec.LookPath(name); err == nil {
 		return p
 	}
+	for _, dir := range knownDirs {
+		p := filepath.Join(dir, exe)
+		if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
+			return p
+		}
+	}
 	return ""
 }
 
 const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 
-// buildArgs assembles the ffmpeg command line for one part.
-func buildArgs(job *Job, output string) []string {
-	args := []string{"-y", "-hide_banner", "-loglevel", "error"} // stdin stays open: "q" is the graceful stop
-	// Everything up to "-i" is an input option.
-	isHTTP := strings.HasPrefix(job.URL, "http://") || strings.HasPrefix(job.URL, "https://")
-	if job.Proxy != "" && isHTTP {
-		args = append(args, "-http_proxy", job.Proxy)
+func isHTTP(u string) bool {
+	return strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://")
+}
+
+// InputArgs are the options for pulling a live stream: proxy, timeout, user agent and the headers
+// the site wants (anyone pulling a stream URL goes through these).
+func InputArgs(url string, headers map[string]string, proxy string) []string {
+	var args []string
+	if proxy != "" && isHTTP(url) {
+		args = append(args, "-http_proxy", proxy)
 	}
 	args = append(args, "-rw_timeout", "15000000", "-user_agent", userAgent)
-	if len(job.Headers) > 0 {
-		keys := make([]string, 0, len(job.Headers))
-		for k := range job.Headers {
+	if len(headers) > 0 {
+		keys := make([]string, 0, len(headers))
+		for k := range headers {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
 		var b strings.Builder
 		for _, k := range keys {
-			b.WriteString(k + ": " + job.Headers[k] + "\r\n")
+			b.WriteString(k + ": " + headers[k] + "\r\n")
 		}
 		args = append(args, "-headers", b.String())
 	}
-	if isHTTP {
+	return args
+}
+
+// buildArgs assembles the ffmpeg command line for one part.
+func buildArgs(job *Job, output string) []string {
+	args := []string{"-y", "-hide_banner", "-loglevel", "error"} // stdin stays open: "q" is the graceful stop
+	// Everything up to "-i" is an input option.
+	args = append(args, InputArgs(job.URL, job.Headers, job.Proxy)...)
+	if isHTTP(job.URL) {
 		// Retry transient network errors inside one ffmpeg run. These are http-protocol options:
 		// on any other input ffmpeg aborts with "Option reconnect not found". No -reconnect_at_eof:
 		// a clean EOF must end the run so the monitor re-resolves a fresh URL.
