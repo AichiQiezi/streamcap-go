@@ -51,6 +51,11 @@ const (
 
 	probeTimeout = 10 * time.Second
 	maxBody      = 8 << 20
+
+	// noRoomData explains an empty room list. The site returns one for live types its web player
+	// can't show (voice / radio-style and VR lives; the page says "该直播类型或玩法电脑端暂不支持"),
+	// so there is no stream to record.
+	noRoomData = "该直播类型网页端不支持（如语音、电台类或 VR 直播），只能在手机上观看，无法录制"
 )
 
 // Endpoints; tests may point them elsewhere.
@@ -267,7 +272,7 @@ func (c *client) fetchWeb(ctx context.Context, webRid string) (*roomData, error)
 		return nil, fmt.Errorf("douyin: room enter api (web_rid %s): decode: %w (body %q)", webRid, err, snippet(body))
 	}
 	if len(r.Data.Data) == 0 {
-		msg := firstNonEmpty(r.Data.Prompts, r.Data.Message, "no room data (VR live is not supported)")
+		msg := firstNonEmpty(r.Data.Prompts, r.Data.Message, noRoomData)
 		return nil, fmt.Errorf("douyin: room enter api (web_rid %s): status_code %d: %s", webRid, r.StatusCode, msg)
 	}
 	rd := &roomData{webRid: webRid, stable: true, room: r.Data.Data[0]}
@@ -376,7 +381,7 @@ func (c *client) fetchApp(ctx context.Context, roomID, secUID string) (*roomData
 		return nil, fmt.Errorf("douyin: reflow api (room %s): decode: %w (body %q)", roomID, err, snippet(body))
 	}
 	if r.Data.Room == nil {
-		msg := firstNonEmpty(r.Data.Prompts, r.Data.Message, "no room data (VR live is not supported)")
+		msg := firstNonEmpty(r.Data.Prompts, r.Data.Message, noRoomData)
 		return nil, fmt.Errorf("douyin: reflow api (room %s): status_code %d: %s", roomID, r.StatusCode, msg)
 	}
 	rd := &roomData{room: *r.Data.Room}

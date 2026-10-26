@@ -219,8 +219,10 @@ func (a *lifecycle) quit() {
 	})
 }
 
+// trayStatus keeps the tray text current, and keeps the computer from sleeping on idle while
+// anything records (a sleeping laptop silently ends every recording).
 func trayStatus(m *monitor.Manager) {
-	last := ""
+	last, awake := "", false
 	for range time.Tick(3 * time.Second) {
 		n := 0
 		for _, v := range m.Views() {
@@ -235,6 +237,10 @@ func trayStatus(m *monitor.Manager) {
 		if text != last {
 			desktop.SetStatus(text)
 			last = text
+		}
+		if busy := n > 0; busy != awake {
+			sysutil.KeepAwake(busy)
+			awake = busy
 		}
 	}
 }

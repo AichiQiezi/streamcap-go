@@ -130,10 +130,25 @@ func runFFmpeg(ctx context.Context, bin string, args []string) error {
 }
 
 // disposeOriginals deletes inputs, or moves them into an "original" sub-folder.
+// removeRetry deletes f, retrying for a few seconds: on Windows a file still open elsewhere (the
+// cover grab reading a just-finished part, an antivirus scan) can't be deleted yet.
+func removeRetry(f string) error {
+	var err error
+	for wait := 500 * time.Millisecond; ; wait *= 2 {
+		if err = os.Remove(f); err == nil || os.IsNotExist(err) {
+			return nil
+		}
+		if wait > 4*time.Second {
+			return err
+		}
+		time.Sleep(wait)
+	}
+}
+
 func disposeOriginals(files []string, del bool) {
 	for _, f := range files {
 		if del {
-			if err := os.Remove(f); err != nil {
+			if err := removeRetry(f); err != nil {
 				slog.Warn("remove original failed", "file", f, "err", err)
 			}
 			continue
