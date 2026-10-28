@@ -38,6 +38,8 @@ interface Store {
   uploadOrder: string[];
   /** undefined until loaded, null when not logged in */
   biliAccount: BiliAccount | null | undefined;
+  /** links the rooms page should open the add dialog with (from a paste or the clipboard offer) */
+  addPrefill: string | null;
   setConn: (c: ConnState) => void;
   upsert: (r: Rec) => void;
   upsertMany: (rs: Rec[]) => void;
@@ -56,6 +58,7 @@ export const useStore = create<Store>()((set) => ({
   uploads: {},
   uploadOrder: [],
   biliAccount: undefined,
+  addPrefill: null,
   setConn: (conn) => set({ conn }),
   upsert: (r) =>
     set((s) => {

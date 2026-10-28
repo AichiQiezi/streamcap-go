@@ -3,6 +3,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { Toaster, toast } from "sonner";
 import { Confirm, cx, Menu, MenuContent, MenuItem, MenuTrigger, Tip, TipProvider } from "./components/ui";
 import { api } from "./lib/api";
+import { useClipboardOffer } from "./lib/clipboard-offer";
 import { bytes } from "./lib/format";
 import { connectLive, useStore } from "./lib/store";
 import { type ThemeMode, useTheme } from "./lib/theme";
@@ -213,6 +214,7 @@ export function App() {
   const { resolved } = useTheme();
   const route = useSyncExternalStore(subscribeHash, readRoute);
   useEffect(() => connectLive(), []);
+  useClipboardOffer();
   const { Page, label } = ROUTES[route];
 
   useEffect(() => {

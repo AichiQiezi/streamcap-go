@@ -10,7 +10,7 @@ import { RecRow, RowHeader } from "@/components/rec-row";
 import { Button, Confirm, cx, Input, Kbd, Segmented, Select } from "@/components/ui";
 import { api } from "@/lib/api";
 import { bytes } from "@/lib/format";
-import { platformName } from "@/lib/platforms";
+import { detectPlatform, extractLinks, platformName } from "@/lib/platforms";
 import { useStore } from "@/lib/store";
 import type { Rec } from "@/lib/types";
 
@@ -94,6 +94,32 @@ export function RoomsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Rec | null>(null);
+  const [prefill, setPrefill] = useState("");
+  const addPrefill = useStore((s) => s.addPrefill);
+
+  // The clipboard offer (or a paste) hands links over through the store: open the add dialog with them.
+  useEffect(() => {
+    if (addPrefill === null) return;
+    setEditing(null);
+    setPrefill(addPrefill);
+    setFormOpen(true);
+    useStore.setState({ addPrefill: null });
+  }, [addPrefill]);
+
+  // Ctrl+V anywhere on the page (not in a field or dialog) with share text opens the add dialog.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const t = e.target;
+      if (t instanceof Element && t.closest("input,textarea,select,[contenteditable],[role=dialog]")) return;
+      if (document.querySelector("[role=dialog]")) return;
+      const links = extractLinks(e.clipboardData?.getData("text") ?? "").filter((u) => detectPlatform(u));
+      if (!links.length) return;
+      e.preventDefault();
+      useStore.setState({ addPrefill: links.join("\n") });
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
   const [deleting, setDeleting] = useState<Rec[] | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -115,6 +141,7 @@ export function RoomsPage() {
       if (e.key === "n" && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         setEditing(null);
+        setPrefill("");
         setFormOpen(true);
       } else if (e.key === "/") {
         e.preventDefault();
@@ -360,7 +387,15 @@ export function RoomsPage() {
         </div>
       )}
 
-      <RecFormDialog open={formOpen} onOpenChange={setFormOpen} editing={editing} />
+      <RecFormDialog
+        open={formOpen}
+        onOpenChange={(o) => {
+          setFormOpen(o);
+          if (!o) setPrefill("");
+        }}
+        editing={editing}
+        initialUrls={prefill}
+      />
       <Confirm
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}

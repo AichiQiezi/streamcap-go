@@ -1,4 +1,4 @@
-import type { BiliAccount, FilesResponse, Partition, Rec, RecInput, SettingsResponse, StateResponse, UploadForm, UploadTask } from "./types";
+import type { BiliAccount, FilesResponse, LinkPreview, Partition, Rec, RecInput, SettingsResponse, StateResponse, UploadForm, UploadTask } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -29,6 +29,11 @@ export const api = {
   add: (items: RecInput[]) => post<{ created: Rec[]; skipped: { url: string; reason: string }[] }>("/api/recordings", items),
   edit: (id: string, item: RecInput) =>
     request<Rec>(`/api/recordings/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(item) }),
+
+  /** Who each link belongs to, whether they're live, and whether the list already has them. */
+  preview: (urls: string[]) => post<{ previews: LinkPreview[] }>("/api/recordings/preview", { urls }),
+  /** Live-room links on the clipboard (never the rest of its text); `sig` changes with its content. */
+  clipboardLinks: () => get<{ sig: string; links: string[] }>("/api/clipboard/links"),
 
   monitor: (id: string, on: boolean) => post<Rec>(`/api/recordings/${encodeURIComponent(id)}/monitor`, { on }),
   record: (id: string, on: boolean) => post<Rec>(`/api/recordings/${encodeURIComponent(id)}/record`, { on }),

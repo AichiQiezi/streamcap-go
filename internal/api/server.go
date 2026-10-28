@@ -3,6 +3,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -52,6 +54,8 @@ func New(m *monitor.Manager, up *upload.Uploader, static fs.FS, loopback bool, h
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("POST /api/recordings", s.add)
 	mux.HandleFunc("POST /api/recordings/batch", s.batch)
+	mux.HandleFunc("POST /api/recordings/preview", s.preview)
+	mux.HandleFunc("GET /api/clipboard/links", s.clipboardLinks)
 	mux.HandleFunc("PUT /api/recordings/order", s.reorder)
 	mux.HandleFunc("PATCH /api/recordings/{id}", s.edit)
 	mux.HandleFunc("DELETE /api/recordings/{id}", s.remove)
@@ -197,6 +201,38 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		skipped = []monitor.Skip{}
 	}
 	writeJSON(w, map[string]any{"created": created, "skipped": skipped})
+}
+
+// preview looks links up before they are added: streamer, live or not, already in the list.
+func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		URLs []string `json:"urls"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	if len(body.URLs) > 10 {
+		body.URLs = body.URLs[:10]
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+	writeJSON(w, map[string]any{"previews": s.m.Previews(ctx, body.URLs)})
+}
+
+// clipboardLinks returns the live-room links on the clipboard, never the rest of its text. sig
+// changes with the clipboard content, so the UI offers each copy once.
+func (s *Server) clipboardLinks(w http.ResponseWriter, _ *http.Request) {
+	text, err := sysutil.ClipboardText()
+	if err != nil {
+		fail(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	sum := sha256.Sum256([]byte(text))
+	links := platform.ExtractLinks(text)
+	if links == nil {
+		links = []string{}
+	}
+	writeJSON(w, map[string]any{"sig": hex.EncodeToString(sum[:8]), "links": links})
 }
 
 func (s *Server) edit(w http.ResponseWriter, r *http.Request) {

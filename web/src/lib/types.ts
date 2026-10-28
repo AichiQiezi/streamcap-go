@@ -128,6 +128,19 @@ export interface FilesResponse {
   files: MediaFile[];
 }
 
+/** A link looked up before adding (POST /api/recordings/preview). */
+export interface LinkPreview {
+  url: string;
+  platform: string;
+  anchor: string;
+  title: string;
+  is_live: boolean;
+  /** id of the room already in the list */
+  existing?: string;
+  existing_name?: string;
+  error?: string;
+}
+
 /** The Bilibili account videos are submitted to. */
 export interface BiliAccount {
   mid: number;

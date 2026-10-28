@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { detectPlatform, extractLinks, platformColor, platformName } from "@/lib/platforms";
 import { useStore } from "@/lib/store";
-import type { Rec, RecInput, SettingsValues } from "@/lib/types";
+import type { LinkPreview, Rec, RecInput, SettingsValues } from "@/lib/types";
 import { Button, cx, Dialog, Field, Input, Segmented, Select, Switch } from "./ui";
 
 interface Form {
@@ -49,8 +49,20 @@ function fromRec(r: Rec): Form {
   };
 }
 
-export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; onOpenChange: (o: boolean) => void; editing?: Rec | null }) {
+export function RecFormDialog({
+  open,
+  onOpenChange,
+  editing,
+  initialUrls,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  editing?: Rec | null;
+  /** links to start an add with (a paste or the clipboard offer) */
+  initialUrls?: string;
+}) {
   const options = useStore((s) => s.options);
+  const [previews, setPreviews] = useState<Record<string, LinkPreview | "loading">>({});
   const [f, setF] = useState<Form | null>(null);
   const [advanced, setAdvanced] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -69,7 +81,7 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
     const init = (v: SettingsValues, defaultSavePath = "") => {
       setDefaultDir(defaultSavePath);
       setF({
-        urls: "",
+        urls: initialUrls ?? "",
         name: "",
         quality: String(v.record_quality || "OD"),
         format: String(v.video_format || "TS").toUpperCase(),
@@ -92,7 +104,7 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
       (st) => init(st.values, st.default_save_path),
       () => init({}),
     );
-  }, [open, editing]);
+  }, [open, editing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const lines = useMemo(
     () =>
@@ -100,6 +112,27 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
     [f?.urls],
   );
   const valid = lines.filter((l) => l.platform);
+
+  // Look each recognized link up (who, live or not, already added), a moment after typing stops.
+  const validKey = valid.map((l) => l.url).join("\n");
+  useEffect(() => {
+    if (!open || editing || !validKey) return;
+    const todo = validKey.split("\n").filter((u) => !(u in previews));
+    if (!todo.length) return;
+    const t = setTimeout(() => {
+      setPreviews((p) => ({ ...p, ...Object.fromEntries(todo.map((u) => [u, "loading" as const])) }));
+      api.preview(todo).then(
+        (r) => setPreviews((p) => ({ ...p, ...Object.fromEntries(r.previews.map((x) => [x.url, x])) })),
+        () => setPreviews((p) => Object.fromEntries(Object.entries(p).filter(([u]) => !todo.includes(u)))),
+      );
+    }, 400);
+    return () => clearTimeout(t);
+  }, [open, editing, validKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dupCount = valid.filter((l) => {
+    const p = previews[l.url];
+    return p && p !== "loading" && p.existing;
+  }).length;
+  const addable = valid.length - dupCount;
   const single = editing || lines.length <= 1;
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((p) => (p ? { ...p, [k]: v } : p));
@@ -166,8 +199,8 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             取消
           </Button>
-          <Button variant="primary" loading={saving} disabled={!f || (!editing && !valid.length)} onClick={submit}>
-            {editing ? "保存" : valid.length > 1 ? `添加 ${valid.length} 个` : "添加"}
+          <Button variant="primary" loading={saving} disabled={!f || (!editing && addable === 0)} onClick={submit}>
+            {editing ? "保存" : addable > 1 ? `添加 ${addable} 个` : "添加"}
           </Button>
         </>
       }
@@ -194,24 +227,46 @@ export function RecFormDialog({ open, onOpenChange, editing }: { open: boolean; 
                 />
                 {lines.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
-                    {lines.map((l, i) => (
-                      <span
-                        key={i}
-                        className={cx(
-                          "inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11.5px]",
-                          l.platform ? "border-line bg-surface-2 text-fg-2" : "border-err/30 bg-err/8 text-err",
-                        )}
-                      >
-                        {l.platform ? (
-                          <span className="size-1.5 rounded-full" style={{ background: platformColor(l.platform) }} />
-                        ) : (
-                          <CircleAlert className="size-3" />
-                        )}
-                        <span className="font-medium">{l.platform ? platformName(l.platform) : "不支持"}</span>
-                        <span className="truncate opacity-70">{l.url.replace(/^https?:\/\/(www\.)?/, "").slice(0, 32)}</span>
-                      </span>
-                    ))}
+                    {lines.map((l, i) => {
+                      const p = l.platform ? previews[l.url] : undefined;
+                      const info = p && p !== "loading" ? p : null;
+                      return (
+                        <span
+                          key={i}
+                          title={info?.title || info?.error || l.url}
+                          className={cx(
+                            "inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11.5px]",
+                            !l.platform ? "border-err/30 bg-err/8 text-err" : info?.existing ? "border-warn/30 bg-warn/8 text-fg-2" : "border-line bg-surface-2 text-fg-2",
+                          )}
+                        >
+                          {l.platform ? (
+                            <span className="size-1.5 shrink-0 rounded-full" style={{ background: platformColor(l.platform) }} />
+                          ) : (
+                            <CircleAlert className="size-3" />
+                          )}
+                          <span className="shrink-0 font-medium">{l.platform ? platformName(l.platform) : "不支持"}</span>
+                          {info?.anchor ? (
+                            <span className="truncate font-medium text-fg">{info.anchor}</span>
+                          ) : (
+                            <span className="truncate opacity-70">{l.url.replace(/^https?:\/\/(www\.)?/, "").slice(0, 32)}</span>
+                          )}
+                          {p === "loading" && <span className="shrink-0 opacity-60">识别中…</span>}
+                          {info && !info.error && (
+                            <span className={cx("shrink-0 rounded px-1 text-[10.5px] font-medium", info.is_live ? "bg-rec/12 text-rec" : "bg-surface-3 text-fg-3")}>
+                              {info.is_live ? "直播中" : "未开播"}
+                            </span>
+                          )}
+                          {info?.existing && <span className="shrink-0 text-warn">已在列表中</span>}
+                          {info?.error && !info.existing && <span className="shrink-0 truncate text-warn">识别失败</span>}
+                        </span>
+                      );
+                    })}
                   </div>
+                )}
+                {dupCount > 0 && (
+                  <p className="text-[12px] text-fg-3">
+                    {dupCount === valid.length ? "这些直播间都已经在列表里了" : `有 ${dupCount} 个已在列表中，添加时会跳过`}
+                  </p>
                 )}
               </>
             )}
