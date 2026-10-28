@@ -106,6 +106,9 @@ func executable() string {
 // Alert is unused on macOS (errors are logged; the app runs from a terminal or Finder).
 func Alert(string, string) {}
 
+// Foreground is not tracked on macOS yet; the page falls back to its own focus events.
+func Foreground() (fg, ok bool) { return false, false }
+
 // Notify shows a Notification Center banner; clicking it opens url. Outside an .app bundle (go run,
 // the bare binary) Notification Center refuses unbundled processes, so it falls back to AppleScript,
 // whose banners come from "Script Editor" and can't open the link.

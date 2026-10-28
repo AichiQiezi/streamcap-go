@@ -112,9 +112,11 @@ func main() {
 	}
 	windowMode := !*browser && !*headless
 	app := &lifecycle{m: m, done: make(chan struct{}), window: windowMode}
+	var onActivate func()
 	srv := &http.Server{
 		Handler: api.New(m, up, static, loopback, api.Hooks{
 			Show: app.show(url), Quit: app.quit, OpenNotificationSettings: desktop.OpenNotificationSettings,
+			OnActivate: func(fn func()) { onActivate = fn },
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -138,6 +140,11 @@ func main() {
 		app.quit()
 	}()
 	go trayStatus(m)
+	go watchForeground(func() {
+		if onActivate != nil {
+			onActivate()
+		}
+	})
 
 	opts := desktop.Options{
 		URL: url, DataDir: *dataDir, DevTools: *devtools,
@@ -242,6 +249,18 @@ func trayStatus(m *monitor.Manager) {
 			sysutil.KeepAwake(busy)
 			awake = busy
 		}
+	}
+}
+
+// watchForeground calls activated each time the app window comes to the front.
+func watchForeground(activated func()) {
+	was := false
+	for range time.Tick(700 * time.Millisecond) {
+		fg, ok := desktop.Foreground()
+		if ok && fg && !was {
+			activated()
+		}
+		was = ok && fg
 	}
 }
 

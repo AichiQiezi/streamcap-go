@@ -20,6 +20,7 @@ var (
 	procShowWindow     = user32.NewProc("ShowWindow")
 	procSetForeground  = user32.NewProc("SetForegroundWindow")
 	procIsIconic       = user32.NewProc("IsIconic")
+	procGetForeground  = user32.NewProc("GetForegroundWindow")
 	procMessageBox     = user32.NewProc("MessageBoxW")
 )
 
@@ -121,6 +122,18 @@ func (s *winShell) terminate() {
 			s.w.Dispatch(func() { s.w.Terminate() })
 		}
 	})
+}
+
+// Foreground reports whether the app window is the active window. ok is false without a window
+// (tray-only or browser mode). The page can't tell by itself: inside WebView2, document.hasFocus()
+// stays false even while the window is in front.
+func Foreground() (fg, ok bool) {
+	s := active
+	if s == nil || s.hwnd == 0 {
+		return false, false
+	}
+	h, _, _ := procGetForeground.Call()
+	return h == s.hwnd, true
 }
 
 // Alert shows a blocking message box (the GUI build has no console to print to).

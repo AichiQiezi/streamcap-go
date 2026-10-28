@@ -40,6 +40,8 @@ interface Store {
   biliAccount: BiliAccount | null | undefined;
   /** links the rooms page should open the add dialog with (from a paste or the clipboard offer) */
   addPrefill: string | null;
+  /** last time the app window came to the front (server "app_active"), for the clipboard offer */
+  appActiveAt: number;
   setConn: (c: ConnState) => void;
   upsert: (r: Rec) => void;
   upsertMany: (rs: Rec[]) => void;
@@ -59,6 +61,7 @@ export const useStore = create<Store>()((set) => ({
   uploadOrder: [],
   biliAccount: undefined,
   addPrefill: null,
+  appActiveAt: 0,
   setConn: (conn) => set({ conn }),
   upsert: (r) =>
     set((s) => {
@@ -95,7 +98,7 @@ function wsUrl(): string {
 }
 
 interface WsMessage {
-  event: "recording" | "removed" | "toast" | "quitting" | "order" | "upload" | "upload_removed" | "bili_account";
+  event: "recording" | "removed" | "toast" | "quitting" | "order" | "upload" | "upload_removed" | "bili_account" | "app_active";
   data: unknown;
 }
 
@@ -122,6 +125,7 @@ function handleMessage(msg: WsMessage) {
   else if (msg.event === "removed") st.drop(msg.data as string[]);
   else if (msg.event === "quitting") useStore.setState({ quitting: true });
   else if (msg.event === "upload") upsertUpload(msg.data as UploadTask);
+  else if (msg.event === "app_active") useStore.setState({ appActiveAt: Date.now() });
   else if (msg.event === "upload_removed") {
     const id = msg.data as string;
     useStore.setState((s) => {

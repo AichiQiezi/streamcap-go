@@ -35,6 +35,8 @@ type Hooks struct {
 	Quit func() // graceful shutdown: stop recordings, save files, exit
 	// OpenNotificationSettings opens the OS page where StreamCap's notifications are allowed.
 	OpenNotificationSettings func() error
+	// OnActivate registers fn to run whenever the app window comes to the front (nil: no window).
+	OnActivate func(fn func())
 }
 
 // Server bundles the handlers.
@@ -50,6 +52,10 @@ type Server struct {
 // New builds the HTTP handler. static is the embedded web/dist (nil = API only).
 func New(m *monitor.Manager, up *upload.Uploader, static fs.FS, loopback bool, hooks Hooks) http.Handler {
 	s := &Server{m: m, up: up, hub: newHub(m, up), static: static, loopback: loopback, hooks: hooks}
+	if hooks.OnActivate != nil {
+		// The page checks the clipboard for share links when the window comes back.
+		hooks.OnActivate(func() { s.hub.broadcast("app_active", map[string]any{}) })
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("POST /api/recordings", s.add)

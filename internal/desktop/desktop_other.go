@@ -16,6 +16,9 @@ func SetStatus(string) {}
 // Alert prints nothing special off Windows/macOS; errors go to the log and stderr.
 func Alert(string, string) {}
 
+// Foreground is unknown without a native window.
+func Foreground() (fg, ok bool) { return false, false }
+
 // OpenNotificationSettings has no common target across Linux desktops.
 func OpenNotificationSettings() error {
 	return fmt.Errorf("请在桌面环境的设置里管理通知")
